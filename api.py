@@ -4,6 +4,7 @@ import datetime
 import asyncio
 import socket
 import sys
+import os
 import json
 import aiohttp.web
 import aiohttp_route_decorator
@@ -85,8 +86,8 @@ async def api_status(_):
 
 
 loop = asyncio.get_event_loop()
-loop.run_until_complete(db.connect("postgres://vgstats@localhost/vgstats"))
-loop.run_until_complete(queries.load_queries("queries/"))
+loop.run_until_complete(db.connect("postgres://vgstats@postgres/vgstats"))
+loop.run_until_complete(queries.load_queries("/apps/api/queries"))
 loop.create_task(recrawl())
 app = aiohttp.web.Application(loop=loop)
 route.add_to_router(app.router)
