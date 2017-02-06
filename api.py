@@ -13,7 +13,7 @@ import crawler
 import queries
 
 
-route = aiohttp_route_decorator.RouteCollector(prefix="/api")
+route = aiohttp_route_decorator.RouteCollector()
 db = database.Database()
 
 
@@ -74,9 +74,8 @@ async def api_status(_):
 
 loop = asyncio.get_event_loop()
 loop.run_until_complete(db.connect("postgres://vgstats@localhost/vgstats"))
-loop.run_until_complete(queries.load_queries("api/queries/"))
+loop.run_until_complete(queries.load_queries("queries/"))
 loop.create_task(recrawl())
 app = aiohttp.web.Application(loop=loop)
 route.add_to_router(app.router)
-app.router.add_static("/web", "web-dev")  # development web frontend
 aiohttp.web.run_app(app)
