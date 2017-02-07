@@ -16,6 +16,7 @@ async def crawl_region(region):
        until the DB is up to date."""
     api = crawler.Crawler()
 
+    # fetch until exhausted
     while True:
         try:
             last_match_update = (await db.select(
@@ -46,21 +47,22 @@ async def crawl_region(region):
 
 async def crawl_forever():
     """Gets the latest matches from all regions every 5 minutes."""
-    print("getting recent matches")
+    # repeat forever
+    while True:
+        print("getting recent matches")
 
-    # TODO: insert API version (force update if changed)
-    # TODO: create database indices
-    # get or put when the last crawl was executed
+        # TODO: insert API version (force update if changed)
+        # TODO: create database indices
+        # get or put when the last crawl was executed
 
-    # crawl and upsert
-    tasks = []
-    for region in ["na", "eu"]:
-        # fire workers
-        tasks.append(asyncio.ensure_future(crawl_region(region)))
+        # crawl and upsert
+        tasks = []
+        for region in ["na", "eu"]:
+            # fire workers
+            tasks.append(asyncio.ensure_future(crawl_region(region)))
 
-    await asyncio.gather(*tasks)  # wait until all have completed
-    await asyncio.sleep(300)
-    asyncio.ensure_future(crawl_forever())  # repeat.
+        await asyncio.gather(*tasks)  # wait until all have completed
+        await asyncio.sleep(300)
 
 
 loop = asyncio.get_event_loop()
