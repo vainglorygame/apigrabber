@@ -1,20 +1,12 @@
 #!/usr/bin/python
 
-import datetime
 import asyncio
-import socket
-import sys
 import os
-import json
-import aiohttp.web
-import aiohttp_route_decorator
 
 import database
 import crawler
-import queries
 
 
-route = aiohttp_route_decorator.RouteCollector()
 db = database.Database()
 
 
@@ -52,7 +44,7 @@ async def crawl_region(region):
         await db.upsert(matches, True)
 
 
-async def recrawl():
+async def crawl_forever():
     """Gets the latest matches from all regions every 5 minutes."""
     print("getting recent matches")
 
@@ -61,28 +53,14 @@ async def recrawl():
     # get or put when the last crawl was executed
 
     # crawl and upsert
+    tasks = []
     for region in ["na", "eu"]:
         # fire workers
-        asyncio.ensure_future(crawl_region(region))
+        tasks.append(asyncio.ensure_future(crawl_region(region)))
 
+    await asyncio.gather(*tasks)  # wait until all have completed
     await asyncio.sleep(300)
-    asyncio.ensure_future(recrawl())
-
-
-@route("/matches")
-async def api_matches(request):
-    data = (await db.select(queries.queries["recent-matches"]))[0]["data"]
-    return aiohttp.web.Response(text=str(data))
-
-@route("/winrates")
-async def api_winrates(request):
-    data = (await db.select(queries.queries["hero-winrates"]))[0]["data"]
-    return aiohttp.web.Response(text=str(data))
-
-@route("/status")
-async def api_status(_):
-    resp = json.dumps({"version": "0.1.0"})
-    return aiohttp.web.Response(text=resp)
+    asyncio.ensure_future(crawl_forever())  # repeat.
 
 
 loop = asyncio.get_event_loop()
@@ -93,8 +71,6 @@ loop.run_until_complete(db.connect(
     password=os.environ["POSTGRESQL_PASSWORD"],
     database=os.environ["POSTGRESQL_DB"]
 ))
-loop.run_until_complete(queries.load_queries("/apps/api/queries"))
-loop.create_task(recrawl())
-app = aiohttp.web.Application(loop=loop)
-route.add_to_router(app.router)
-aiohttp.web.run_app(app)
+loop.run_until_complete(
+    crawl_forever()
+)
