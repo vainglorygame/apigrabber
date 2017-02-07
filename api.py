@@ -86,7 +86,13 @@ async def api_status(_):
 
 
 loop = asyncio.get_event_loop()
-loop.run_until_complete(db.connect("postgres://vgstats@postgres/vgstats"))
+loop.run_until_complete(db.connect(
+    host=os.environ["POSTGRESQL_HOST"],
+    port=os.environ["POSTGRESQL_PORT"],
+    user=os.environ["POSTGRESQL_USER"],
+    password=os.environ["POSTGRESQL_PASSWORD"],
+    database=os.environ["POSTGRESQL_DB"]
+))
 loop.run_until_complete(queries.load_queries("/apps/api/queries"))
 loop.create_task(recrawl())
 app = aiohttp.web.Application(loop=loop)

@@ -10,13 +10,24 @@ class Database(object):
     def __init__(self):
         self._pool = None
 
-    async def connect(self, connstring):
+    async def connect(self, host, port, user, password, database):
         """Connects to the database.
 
         :param connstring: Connection string containing user and database.
         :type connstring: str
         """
-        self._pool = await asyncpg.create_pool(connstring)
+        while True:  # retry until connection succeeds
+            try:
+                print("attempting to connect to db…")
+                self._pool = await asyncpg.create_pool(
+                    host=host, port=port, user=user,
+                    password=password, database=database)
+                break
+            except asyncpg.exceptions.CannotConnectNowError:
+                await self._pool.close()
+                print("Database is not ready yet. Retrying…")
+                await asyncio.sleep(5)
+
 
     async def upsert_type(self, obj, objtype, many=False):
         """Upserts an object of given `objtype` into the corresponding database.
