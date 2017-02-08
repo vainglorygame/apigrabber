@@ -12,8 +12,8 @@ db = database.Database()
 
 
 async def crawl_region(region):
-    """Gets some matches from a region and inserts them
-       until the DB is up to date."""
+    """Get matches from a region and insert them
+       until the DB is up to date. Repeat after five minutes."""
     api = crawler.Crawler()
 
     # fetch until exhausted
@@ -30,7 +30,8 @@ async def crawl_region(region):
         except:
             last_match_update = "2017-02-05T01:01:01Z"
 
-        logging.info("%s: fetching matches since %s", region, last_match_update)
+        logging.info("%s: fetching matches since %s",
+                     region, last_match_update)
 
         # wait for http requests
         matches = await api.matches_since(last_match_update,
@@ -40,29 +41,23 @@ async def crawl_region(region):
             logging.debug("%s: %s objects", region, len(matches))
         else:
             logging.debug("%s: no objects, stopping", region)
-            return
-        # insert asynchronously in the background
+            break
+        # wait for db inserts
         await db.upsert(matches, True)
 
+    logging.debug("%s: going to sleep", region)
+    await asyncio.sleep(300)
+    asyncio.ensure_future(crawl_region(region))  # restart self
 
-async def crawl_forever():
-    """Gets the latest matches from all regions every 5 minutes."""
-    # repeat forever
-    while True:
-        logging.info("pulling recent matches")
 
-        # TODO: insert API version (force update if changed)
-        # TODO: create database indices
-        # get or put when the last crawl was executed
+async def start_crawlers():
+    """Start the tasks that pull the data."""
+    # TODO: insert API version (force update if changed)
+    # TODO: create database indices
 
-        # crawl and upsert
-        tasks = []
-        for region in ["na", "eu"]:
-            # fire workers
-            tasks.append(asyncio.ensure_future(crawl_region(region)))
-
-        await asyncio.gather(*tasks)  # wait until all have completed
-        await asyncio.sleep(300)
+    for region in ["na", "eu"]:
+        # fire workers
+        asyncio.ensure_future(crawl_region(region))
 
 
 logging.basicConfig(level=logging.DEBUG)
@@ -75,5 +70,6 @@ loop.run_until_complete(db.connect(
     database=os.environ["POSTGRESQL_DB"]
 ))
 loop.run_until_complete(
-    crawl_forever()
+    start_crawlers()
 )
+loop.run_forever()
