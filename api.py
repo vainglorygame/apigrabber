@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import logging
 
 import database
 import crawler
@@ -10,7 +11,6 @@ import crawler
 db = database.Database()
 
 
-# TODO use logging module instead of print
 async def crawl_region(region):
     """Gets some matches from a region and inserts them
        until the DB is up to date."""
@@ -30,16 +30,16 @@ async def crawl_region(region):
         except:
             last_match_update = "2017-02-05T01:01:01Z"
 
-        print(region + " fetching matches after " + last_match_update)
+        logging.info("%s: fetching matches since %s", region, last_match_update)
 
         # wait for http requests
         matches = await api.matches_since(last_match_update,
                                           region=region,
                                           params={"page[limit]": 50})
         if len(matches) > 0:
-            print(region + " got new data items: " + str(len(matches)))
+            logging.debug("%s: %s objects", region, len(matches))
         else:
-            print(region + " got no new matches.")
+            logging.debug("%s: no objects, stopping", region)
             return
         # insert asynchronously in the background
         await db.upsert(matches, True)
@@ -49,7 +49,7 @@ async def crawl_forever():
     """Gets the latest matches from all regions every 5 minutes."""
     # repeat forever
     while True:
-        print("getting recent matches")
+        logging.info("pulling recent matches")
 
         # TODO: insert API version (force update if changed)
         # TODO: create database indices
@@ -65,6 +65,7 @@ async def crawl_forever():
         await asyncio.sleep(300)
 
 
+logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
 loop.run_until_complete(db.connect(
     host=os.environ["POSTGRESQL_HOST"],
