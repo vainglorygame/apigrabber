@@ -34,9 +34,14 @@ async def crawl_region(region):
                      region, last_match_update)
 
         # wait for http requests
-        matches = await api.matches_since(last_match_update,
-                                          region=region,
-                                          params={"page[limit]": 50})
+        try:
+            matches = await api.matches_since(last_match_update,
+                                              region=region,
+                                              params={"page[limit]": 50})
+        except:
+            logging.error("%s: connection error, retrying", region)
+            await asyncio.sleep(5)
+
         if len(matches) > 0:
             logging.debug("%s: %s objects", region, len(matches))
         else:
