@@ -28,7 +28,7 @@ async def crawl_region(region):
                 """)
             )[0]["created"]
         except:
-            last_match_update = "2017-02-05T01:01:01Z"
+            last_match_update = "2017-02-07T01:01:01Z"  # TODO
 
         logging.info("%s: fetching matches since %s",
                      region, last_match_update)
@@ -55,7 +55,7 @@ async def start_crawlers():
     # TODO: insert API version (force update if changed)
     # TODO: create database indices
 
-    for region in ["na", "eu"]:
+    for region in ["na", "eu", "sg", "ea", "sa", "cn"]:
         # fire workers
         asyncio.ensure_future(crawl_region(region))
 
