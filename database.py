@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import asyncio
+import logging
 import json
 import asyncpg
 
@@ -18,14 +19,14 @@ class Database(object):
         """
         while True:  # retry until connection succeeds
             try:
-                print("attempting to connect to db…")
+                logging.warning("connecting to database")
                 self._pool = await asyncpg.create_pool(
                     host=host, port=port, user=user,
                     password=password, database=database)
                 break
             except asyncpg.exceptions.CannotConnectNowError:
                 await self._pool.close()
-                print("Database is not ready yet. Retrying…")
+                logging.error("database is not ready, retrying")
                 await asyncio.sleep(5)
 
 

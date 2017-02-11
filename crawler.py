@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import logging
 import asyncio
 import aiohttp
 
@@ -69,7 +70,6 @@ class Crawler(object):
             while True:
                 params["page[offset]"] += params["page[limit]"]
                 try:
-                    print("asking for more matches…")
                     res = await self._req(session,
                                           "shards/" + region + "/matches",
                                           params)
@@ -80,6 +80,7 @@ class Crawler(object):
 
                 if not forever:
                     break  # stop after one iteration
+                logging.debug("%s: asking for more matches", region)
 
         return data
 
