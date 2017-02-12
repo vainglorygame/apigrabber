@@ -3,78 +3,228 @@
 import asyncio
 import os
 import logging
+import datetime
+import json
+import random
+import asyncpg
 
-import database
 import crawler
 
+# SEMC API is a bit strict about the iso format
+def date2iso(d):
+    """Convert datetime to iso8601 string."""
+    date = d.isoformat()
+    date = ".".join(date.split(".")[:-1])  # remove microseconds
+    date = date + "Z"
+    return date
 
-db = database.Database()
-
-
-async def crawl_region(region):
-    """Get matches from a region and insert them
-       until the DB is up to date. Repeat after five minutes."""
-    api = crawler.Crawler()
-
-    # fetch until exhausted
-    while True:
-        try:
-            last_match_update = (await db.select(
-                """
-                SELECT data->'attributes'->>'createdAt' AS created
-                FROM match
-                WHERE data->'attributes'->>'shardId'='""" + region + """'
-                ORDER BY data->'attributes'->>'createdAt' DESC LIMIT 1
-                """)
-            )[0]["created"]
-        except:
-            last_match_update = "2017-02-07T01:01:01Z"  # TODO
-
-        logging.info("%s: fetching matches since %s",
-                     region, last_match_update)
-
-        # wait for http requests
-        try:
-            matches = await api.matches_since(last_match_update,
-                                              region=region,
-                                              params={"page[limit]": 50})
-        except:
-            logging.error("%s: connection error, retrying", region)
-            await asyncio.sleep(5)
-
-        if len(matches) > 0:
-            logging.debug("%s: %s objects", region, len(matches))
-        else:
-            logging.debug("%s: no objects, stopping", region)
-            break
-        # wait for db inserts
-        await db.upsert(matches, True)
-
-    logging.debug("%s: going to sleep", region)
-    await asyncio.sleep(300)
-    asyncio.ensure_future(crawl_region(region))  # restart self
+def iso2date(d):
+    """Convert iso8601 string to date."""
+    d = d.replace(":", "").replace("-", "")
+    d = datetime.datetime.strptime(d, "%Y%m%dT%H%M%SZ")
+    return d
 
 
-async def start_crawlers():
-    """Start the tasks that pull the data."""
-    # TODO: insert API version (force update if changed)
-    # TODO: create database indices
+class Apigrabber(object):
+    def __init__(self):
+        #self.regions = ["na", "eu", "sg", "ea", "sa", "cn"]
+        self.regions = ["na", "eu"]
 
-    for region in ["na", "eu", "sg", "ea", "sa", "cn"]:
-        # fire workers
-        asyncio.ensure_future(crawl_region(region))
+    async def connect(self, **args):
+        self._pool = await asyncpg.create_pool(**args)
 
+    async def _db_setup(self, con):
+        await con.execute("""
+            CREATE TABLE IF NOT EXISTS crawljobs
+                (id SERIAL, start_date TIMESTAMP,
+                end_date TIMESTAMP, finished BOOL, region TEXT)
+            """)
+        await con.execute("""
+            CREATE TABLE IF NOT EXISTS apidata(
+                id TEXT PRIMARY KEY NOT NULL,
+                type TEXT NOT NULL,
+                attributes JSONB,
+                relationships JSONB)
+            """)
+        # create past zombie job that marks the last data to fetch
+        await con.execute("""
+            INSERT INTO crawljobs(start_date, end_date, finished, region)
+            SELECT '2017-02-01T00:00:00Z'::TIMESTAMP,
+                   '2017-02-01T00:00:00Z'::TIMESTAMP,
+                   TRUE,
+                   region
+            FROM JSONB_TO_RECORDSET($1::JSONB) AS jsn(region TEXT)
+            ON CONFLICT DO NOTHING;
+        """, json.dumps([{"region": r} for r in self.regions]))
+
+    async def _db_insert(self, con, objects, upsert=False):
+        # TODO need to determine based on data whether to upsert or not
+        # TODO currently, a player object is never updated.
+        data = json.dumps(objects)  # TODO is data -> json -> data inefficient?
+        await con.execute("""
+            INSERT INTO apidata
+                SELECT * FROM
+                JSONB_TO_RECORDSET($1::JSONB)
+                AS jsn(id TEXT, type TEXT, attributes JSONB, relationships JSONB)
+                WHERE type!='player' AND type!='team'
+                ORDER BY id
+        """, data)
+        while True:
+            try:
+                async with con.transaction():  # create savepoint
+                    # objects could include a player twice -> DISTINCT
+                    # another worker could try to modify the same player as we do
+                    # so we create a savepoint and retry when we fail with a deadlock
+                    await con.execute("""
+                    INSERT INTO apidata
+                        SELECT DISTINCT ON(id) * FROM
+                        JSONB_TO_RECORDSET($1::JSONB)
+                        AS jsn(id TEXT, type TEXT, attributes JSONB, relationships JSONB)
+                        WHERE type='player' OR type='team'
+                        ORDER BY id
+                    """ + ("""
+                    ON CONFLICT(id) DO NOTHING
+                    """ if upsert else """
+                    ON CONFLICT(id) DO UPDATE SET
+                        attributes=EXCLUDED.attributes,
+                        relationships=EXCLUDED.relationships
+                    """), data)
+                    break  # success, return
+            except asyncpg.exceptions.DeadlockDetectedError:
+                # try again, there were other objects that don't conflict
+                logging.warn("ouch! database deadlocked during data insert, retrying")
+                await asyncio.sleep(random.random())
+
+    async def crawl_timeframe(self, region, jobid, jobstart, jobend):
+        """Crawl a time frame forwards from `date` in `region`."""
+        async with self._pool.acquire() as con:
+            api = crawler.Crawler()
+            async with con.transaction():
+                params = {
+                    "filter[createdAt-start]": date2iso(jobstart),
+                    "filter[createdAt-end]": date2iso(jobend)
+                }
+                logging.debug("%s: (%s) fetching from %s to %s",
+                              region, jobid, jobstart, jobend)
+                matches = await api.matches(region=region, params=params)
+                if len(matches) == 0:
+                    # TODO ensure that there is no valid query without data
+                    # so we won't query the same empty query forever
+                    logging.warn("%s: (%s) did not get any data!", region, jobid)
+                    # will be retried once pending jobs were cleared up
+                    return
+
+                logging.info("%s: (%s) history received %s data objects",
+                             region, jobid, len(matches))
+                # historical data doesn't override
+                await self._db_insert(con, matches, False)
+                logging.info("%s: (%s) inserted",
+                             region, jobid)
+
+                # mark job as done
+                await con.execute("""
+                    UPDATE crawljobs SET finished=true WHERE id=$1""", jobid)
+
+    async def crawl_region_history(self, region):
+        """Get the match history from a region, going backwards in time."""
+        default_diff = 15  # default job length in minutes
+        async with self._pool.acquire() as con:
+            while True:
+                try:
+                    async with con.transaction(isolation="serializable"):
+                        # select us our job
+
+                        jobdate, delta_minutes = await con.fetchrow("""
+                        SELECT
+                          start_date,  -- new job's end date
+                          LEAST(EXTRACT(EPOCH FROM (start_date-previous_end))/60, $2)  -- gap in minutes or default if smaller
+                          FROM (
+                            SELECT
+                            start_date,
+                            LAG(end_date) OVER (ORDER BY start_date ASC) AS previous_end
+                            FROM crawljobs
+                            WHERE region=$1
+                            ORDER BY start_date ASC
+                           ) AS d
+                        WHERE start_date-previous_end>INTERVAL '0'  -- get gaps
+                        ORDER BY start_date DESC LIMIT 1
+                        """, region, default_diff)
+                        delta = datetime.timedelta(minutes=delta_minutes)
+                        # store our job as pending
+                        jobid = await con.fetchval("""
+                            INSERT INTO crawljobs(start_date, end_date, finished, region)
+                            VALUES ($1, $2, false, $3)
+                            RETURNING id
+                        """, jobdate-delta, jobdate, region)
+                        # exit loop
+                        break
+                except asyncpg.exceptions.SerializationError:
+                    await asyncio.sleep(random.random())
+                    # job is being picked up by another worker, try again
+
+        await self.crawl_timeframe(region,
+                                   jobid,
+                                   jobdate-delta,
+                                   jobdate)
+
+        asyncio.ensure_future(self.crawl_region_history(region))  # restart self
+
+    async def request_update(self, region):
+        async with self._pool.acquire() as con:
+            while True:
+                try:
+                    async with con.transaction(isolation="serializable"):
+                        # insert a job from now->now
+                        # so history crawler picks up the time diff between
+                        # now and the last query.
+                        await con.fetchval("""
+                            INSERT INTO crawljobs(start_date, end_date, finished, region)
+                            VALUES (NOW(), NOW(), TRUE, $1)
+                        """, region)
+                        logging.info("%s: scheduled for live update", region)
+                        break
+                except asyncpg.exceptions.SerializationError:
+                    await asyncio.sleep(random.random())
+
+        async def _recall_later():
+            await asyncio.sleep(300)  # wait 5 min and repeat
+            asyncio.ensure_future(self.request_update(region))
+        asyncio.ensure_future(_recall_later())
+
+
+    async def start(self):
+        """Start the tasks that pull the data."""
+        # TODO: respawn a worker if it dies because of connection issues
+        # TODO: insert API version (force update if changed)
+        # TODO: create database indices (id & shardId & type)
+
+        for region in self.regions:
+            await self.request_update(region)
+            for _ in range(3):
+                # supports scaling :]
+                asyncio.ensure_future(self.crawl_region_history(region))
+
+    async def setup(self):
+        async with self._pool.acquire() as con:
+            async with con.transaction():
+                await self._db_setup(con)
+                # clean up after force quit
+                await con.execute("DELETE FROM crawljobs WHERE finished=false")
+
+
+async def startup():
+    apigrabber = Apigrabber()
+    await apigrabber.connect(
+        host=os.environ["POSTGRESQL_HOST"],
+        port=os.environ["POSTGRESQL_PORT"],
+        user=os.environ["POSTGRESQL_USER"],
+        password=os.environ["POSTGRESQL_PASSWORD"],
+        database=os.environ["POSTGRESQL_DB"]
+    )
+    await apigrabber.setup()
+    await apigrabber.start()
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
-loop.run_until_complete(db.connect(
-    host=os.environ["POSTGRESQL_HOST"],
-    port=os.environ["POSTGRESQL_PORT"],
-    user=os.environ["POSTGRESQL_USER"],
-    password=os.environ["POSTGRESQL_PASSWORD"],
-    database=os.environ["POSTGRESQL_DB"]
-))
-loop.run_until_complete(
-    start_crawlers()
-)
+loop.run_until_complete(startup())
 loop.run_forever()

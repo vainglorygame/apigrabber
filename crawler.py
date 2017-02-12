@@ -1,6 +1,5 @@
 #!/usr/bin/python
 
-import logging
 import asyncio
 import aiohttp
 
@@ -80,7 +79,6 @@ class Crawler(object):
 
                 if not forever:
                     break  # stop after one iteration
-                logging.debug("%s: asking for more matches", region)
 
         return data
 
