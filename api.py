@@ -10,6 +10,7 @@ import asyncpg
 
 import crawler
 
+
 # SEMC API is a bit strict about the iso format
 def date2iso(d):
     """Convert datetime to iso8601 string."""
@@ -17,6 +18,7 @@ def date2iso(d):
     date = ".".join(date.split(".")[:-1])  # remove microseconds
     date = date + "Z"
     return date
+
 
 def iso2date(d):
     """Convert iso8601 string to date."""
@@ -34,6 +36,7 @@ class Apigrabber(object):
         self._pool = await asyncpg.create_pool(**args)
 
     async def _db_setup(self, con):
+        """Create tables and indices."""
         await con.execute("""
             CREATE TABLE IF NOT EXISTS crawljobs
                 (id SERIAL, start_date TIMESTAMP,
@@ -46,16 +49,27 @@ class Apigrabber(object):
                 attributes JSONB,
                 relationships JSONB)
             """)
+        # indices are not used
+        #logging.warn("creating database indices")
+        ## TODO use less indices: take up 1/3 of the storage!!!
+        #await con.execute(
+        #    "CREATE UNIQUE INDEX CONCURRENTLY ON apidata (id, type)")
+        #await con.execute(
+        #    "CREATE UNIQUE INDEX CONCURRENTLY ON apidata (id, type, (attributes->>'shardId'))")
+        #await con.execute(
+        #    "CREATE INDEX CONCURRENTLY ON apidata ((attributes->>'name')) WHERE type='player'")  # TODO make unique once the devs fixed empty shardId in responses
+
         # create past zombie job that marks the last data to fetch
-        await con.execute("""
-            INSERT INTO crawljobs(start_date, end_date, finished, region)
-            SELECT '2017-02-01T00:00:00Z'::TIMESTAMP,
-                   '2017-02-01T00:00:00Z'::TIMESTAMP,
-                   TRUE,
-                   region
-            FROM JSONB_TO_RECORDSET($1::JSONB) AS jsn(region TEXT)
-            ON CONFLICT DO NOTHING;
-        """, json.dumps([{"region": r} for r in self.regions]))
+        async with con.transaction():
+            await con.execute("""
+                INSERT INTO crawljobs(start_date, end_date, finished, region)
+                SELECT '2017-02-01T00:00:00Z'::TIMESTAMP,
+                       '2017-02-01T00:00:00Z'::TIMESTAMP,
+                       TRUE,
+                       region
+                FROM JSONB_TO_RECORDSET($1::JSONB) AS jsn(region TEXT)
+                ON CONFLICT DO NOTHING;
+            """, json.dumps([{"region": r} for r in self.regions]))
 
     async def _db_insert(self, con, objects, upsert=False):
         # TODO need to determine based on data whether to upsert or not
@@ -114,7 +128,7 @@ class Apigrabber(object):
                     # will be retried once pending jobs were cleared up
                     return
 
-                logging.info("%s: (%s) history received %s data objects",
+                logging.info("%s: (%s) received %s data objects",
                              region, jobid, len(matches))
                 # historical data doesn't override
                 await self._db_insert(con, matches, False)
@@ -125,8 +139,8 @@ class Apigrabber(object):
                 await con.execute("""
                     UPDATE crawljobs SET finished=true WHERE id=$1""", jobid)
 
-    async def crawl_region_history(self, region):
-        """Get the match history from a region, going backwards in time."""
+    async def crawl_region(self, region):
+        """Get the match history from a region."""
         default_diff = 15  # default job length in minutes
         async with self._pool.acquire() as con:
             while True:
@@ -167,7 +181,7 @@ class Apigrabber(object):
                                    jobdate-delta,
                                    jobdate)
 
-        asyncio.ensure_future(self.crawl_region_history(region))  # restart self
+        asyncio.ensure_future(self.crawl_region(region))  # restart self
 
     async def request_update(self, region):
         async with self._pool.acquire() as con:
@@ -202,14 +216,13 @@ class Apigrabber(object):
             await self.request_update(region)
             for _ in range(3):
                 # supports scaling :]
-                asyncio.ensure_future(self.crawl_region_history(region))
+                asyncio.ensure_future(self.crawl_region(region))
 
     async def setup(self):
         async with self._pool.acquire() as con:
-            async with con.transaction():
-                await self._db_setup(con)
-                # clean up after force quit
-                await con.execute("DELETE FROM crawljobs WHERE finished=false")
+            await self._db_setup(con)
+            ## clean up after force quit (TODO - disabled for dev)
+            #await con.execute("DELETE FROM crawljobs WHERE finished=false")
 
 
 async def startup():
