@@ -166,7 +166,7 @@ class Apigrabber(object):
                         if row_res == None:
                             logging.warn("%s: no jobs available. idling.", region)
                             await asyncio.sleep(60)  # a minute TODO make this smarter
-                            break
+                            asyncio.ensure_future(self.crawl_region(region))
 
                         jobdate, delta_minutes = row_res
                         delta = datetime.timedelta(minutes=delta_minutes)
