@@ -63,8 +63,8 @@ class Apigrabber(object):
         async with con.transaction():
             await con.execute("""
                 INSERT INTO crawljobs(start_date, end_date, finished, region)
-                SELECT '2017-02-01T00:00:00Z'::TIMESTAMP,
-                       '2017-02-01T00:00:00Z'::TIMESTAMP,
+                SELECT '2017-02-14T00:00:00Z'::TIMESTAMP,
+                       '2017-02-14T00:00:00Z'::TIMESTAMP,
                        TRUE,
                        region
                 FROM JSONB_TO_RECORDSET($1::JSONB) AS jsn(region TEXT)
