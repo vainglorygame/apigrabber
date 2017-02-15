@@ -1,6 +1,7 @@
 #!/usr/bin/python
 
 import asyncio
+import logging
 import aiohttp
 
 TOKEN = "aaa.bbb.ccc"
@@ -32,10 +33,14 @@ class Crawler(object):
             "Accept": "application/vnd.api+json",
             "Content-Encoding": "gzip"
         }
-        async with session.get(self._apiurl + path, headers=headers,
-                               params=params) as response:
-            assert response.status == 200
-            return await response.json()
+        try:
+            async with session.get(self._apiurl + path, headers=headers,
+                                   params=params) as response:
+                assert response.status == 200
+                return await response.json()
+        except aiohttp.errors.ClientResponseError:
+            logging.warning("error connecting to API, retrying")
+            return await self._req(session, path, params)
 
     async def version(self):
         """Returns the current API version."""
