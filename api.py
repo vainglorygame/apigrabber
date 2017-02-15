@@ -63,8 +63,8 @@ class Apigrabber(object):
         async with con.transaction():
             await con.execute("""
                 INSERT INTO crawljobs(start_date, end_date, finished, region)
-                SELECT '2017-02-01T00:00:00Z'::TIMESTAMP,
-                       '2017-02-01T00:00:00Z'::TIMESTAMP,
+                SELECT '2017-02-14T00:00:00Z'::TIMESTAMP,
+                       '2017-02-14T00:00:00Z'::TIMESTAMP,
                        TRUE,
                        region
                 FROM JSONB_TO_RECORDSET($1::JSONB) AS jsn(region TEXT)
@@ -148,7 +148,7 @@ class Apigrabber(object):
                     async with con.transaction(isolation="serializable"):
                         # select us our job
 
-                        jobdate, delta_minutes = await con.fetchrow("""
+                        row_res = await con.fetchrow("""
                         SELECT
                           start_date,  -- new job's end date
                           LEAST(EXTRACT(EPOCH FROM (start_date-previous_end))/60, $2)  -- gap in minutes or default if smaller
@@ -163,6 +163,12 @@ class Apigrabber(object):
                         WHERE start_date-previous_end>INTERVAL '0'  -- get gaps
                         ORDER BY start_date DESC LIMIT 1
                         """, region, default_diff)
+                        if row_res == None:
+                            logging.warn("%s: no jobs available. idling.", region)
+                            await asyncio.sleep(60)  # a minute TODO make this smarter
+                            asyncio.ensure_future(self.crawl_region(region))
+
+                        jobdate, delta_minutes = row_res
                         delta = datetime.timedelta(minutes=delta_minutes)
                         # store our job as pending
                         jobid = await con.fetchval("""
@@ -211,6 +217,7 @@ class Apigrabber(object):
         # TODO: respawn a worker if it dies because of connection issues
         # TODO: insert API version (force update if changed)
         # TODO: create database indices (id & shardId & type)
+        # TODO: make workers switch regions flexibly to meet demand?
 
         for region in self.regions:
             await self.request_update(region)
