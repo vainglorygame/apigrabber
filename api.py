@@ -42,22 +42,6 @@ class Apigrabber(object):
                 (id SERIAL, start_date TIMESTAMP,
                 end_date TIMESTAMP, finished BOOL, region TEXT)
             """)
-        await con.execute("""
-            CREATE TABLE IF NOT EXISTS apidata(
-                id TEXT PRIMARY KEY NOT NULL,
-                type TEXT NOT NULL,
-                attributes JSONB,
-                relationships JSONB)
-            """)
-        # indices are not used
-        #logging.warn("creating database indices")
-        ## TODO use less indices: take up 1/3 of the storage!!!
-        #await con.execute(
-        #    "CREATE UNIQUE INDEX CONCURRENTLY ON apidata (id, type)")
-        #await con.execute(
-        #    "CREATE UNIQUE INDEX CONCURRENTLY ON apidata (id, type, (attributes->>'shardId'))")
-        #await con.execute(
-        #    "CREATE INDEX CONCURRENTLY ON apidata ((attributes->>'name')) WHERE type='player'")  # TODO make unique once the devs fixed empty shardId in responses
 
         # create past zombie job that marks the last data to fetch
         async with con.transaction():
@@ -71,43 +55,46 @@ class Apigrabber(object):
                 ON CONFLICT DO NOTHING;
             """, json.dumps([{"region": r} for r in self.regions]))
 
-    async def _db_insert(self, con, objects, upsert=False):
-        # TODO need to determine based on data whether to upsert or not
-        # TODO currently, a player object is never updated.
-        data = json.dumps(objects)  # TODO is data -> json -> data inefficient?
-        await con.execute("""
-            INSERT INTO apidata
-                SELECT * FROM
-                JSONB_TO_RECORDSET($1::JSONB)
-                AS jsn(id TEXT, type TEXT, attributes JSONB, relationships JSONB)
-                WHERE type!='player' AND type!='team'
-                ORDER BY id
-        """, data)
-        while True:
+    async def _db_insert(self, con, objects):
+        """Insert a list of API response objects into respective tables."""
+        objectmap = {}
+        for o in objects:
             try:
-                async with con.transaction():  # create savepoint
-                    # objects could include a player twice -> DISTINCT
-                    # another worker could try to modify the same player as we do
-                    # so we create a savepoint and retry when we fail with a deadlock
-                    await con.execute("""
-                    INSERT INTO apidata
+                objectmap[o["type"]].append(o)
+            except KeyError:
+                objectmap[o["type"]] = [o]
+                await con.execute("""
+                    CREATE TABLE IF NOT EXISTS """ + o["type"] + """ (
+                        id TEXT PRIMARY KEY NOT NULL,
+                        type TEXT NOT NULL,
+                        attributes JSONB,
+                        relationships JSONB)
+                    """)
+
+        for otype, objs in objectmap.items():
+            async with con.transaction():  # create savepoint
+                # TODO is data -> json -> data inefficient?
+                #
+                # Sometimes the API returns the same player twice
+                # because we are paging, so we filter with DISTINCT.
+                #
+                # 'player's are upserted if their 'played' (number of
+                # matches played) is higher, because the object is more
+                # recent. TODO always keep the update condition in line
+                # with the data that is returned by the API.
+                await con.execute("""
+                    INSERT INTO """ + otype + """ AS j
                         SELECT DISTINCT ON(id) * FROM
                         JSONB_TO_RECORDSET($1::JSONB)
                         AS jsn(id TEXT, type TEXT, attributes JSONB, relationships JSONB)
-                        WHERE type='player' OR type='team'
                         ORDER BY id
-                    """ + ("""
-                    ON CONFLICT(id) DO NOTHING
-                    """ if upsert else """
                     ON CONFLICT(id) DO UPDATE SET
                         attributes=EXCLUDED.attributes,
-                        relationships=EXCLUDED.relationships
-                    """), data)
-                    break  # success, return
-            except asyncpg.exceptions.DeadlockDetectedError:
-                # try again, there were other objects that don't conflict
-                logging.warn("ouch! database deadlocked during data insert, retrying")
-                await asyncio.sleep(random.random())
+                        relationships=EXCLUDED.attributes
+                    WHERE (EXCLUDED.type='player' AND
+                        (j.attributes->'stats'->>'played')::int >
+                        (EXCLUDED.attributes->'stats'->>'played')::int)
+                """, json.dumps(objs))
 
     async def crawl_timeframe(self, region, jobid, jobstart, jobend):
         """Crawl a time frame forwards from `date` in `region`."""
@@ -130,8 +117,7 @@ class Apigrabber(object):
 
                 logging.info("%s: (%s) received %s data objects",
                              region, jobid, len(matches))
-                # historical data doesn't override
-                await self._db_insert(con, matches, False)
+                await self._db_insert(con, matches)
                 logging.info("%s: (%s) inserted",
                              region, jobid)
 
