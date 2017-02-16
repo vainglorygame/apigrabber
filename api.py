@@ -127,7 +127,7 @@ class Apigrabber(object):
 
     async def crawl_region(self, region):
         """Get the match history from a region."""
-        default_diff = 15  # default job length in minutes
+        default_diff = 5  # default job length in minutes
         async with self._pool.acquire() as con:
             while True:
                 try:
@@ -207,7 +207,7 @@ class Apigrabber(object):
 
         for region in self.regions:
             await self.request_update(region)
-            for _ in range(3):
+            for _ in range(5):
                 # supports scaling :]
                 asyncio.ensure_future(self.crawl_region(region))
 
