@@ -38,7 +38,7 @@ class Crawler(object):
                                    params=params) as response:
                 assert response.status == 200
                 return await response.json()
-        except aiohttp.errors.ClientResponseError:
+        except (aiohttp.errors.ClientResponseError, RuntimeError):
             logging.warning("error connecting to API, retrying")
             return await self._req(session, path, params)
 
