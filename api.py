@@ -84,18 +84,23 @@ class Apigrabber(object):
                      else ""))
 
         objectmap = {}
-        for o in objects:
-            try:
-                objectmap[o["type"]].append(o)
-            except KeyError:
-                objectmap[o["type"]] = [o]
-                # create a partition for the day
-                # players are not partitioned by day
-                await con.execute("CREATE TABLE IF NOT EXISTS " +
-                                      table(o["type"]) +
-                                  " (id TEXT PRIMARY KEY) INHERITS (" +
-                                      o["type"] + "_" + region +
-                                  ")")
+        async with con.transaction():  # create savepoint
+            for o in objects:
+                try:
+                    objectmap[o["type"]].append(o)
+                except KeyError:
+                    objectmap[o["type"]] = [o]
+                    # create a partition for the day
+                    # players are not partitioned by day
+                    try:
+                        await con.execute("CREATE TABLE IF NOT EXISTS " +
+                                              table(o["type"]) +
+                                          " (id TEXT PRIMARY KEY) INHERITS (" +
+                                              o["type"] + "_" + region +
+                                          ")")
+                    except asyncpg.DuplicateTableError:
+                        # ninja'd by another worker
+                        pass
 
         for otype, objs in objectmap.items():
             async with con.transaction():  # create savepoint
@@ -177,10 +182,11 @@ class Apigrabber(object):
                         WHERE start_date-previous_end>INTERVAL '0'  -- get gaps
                         ORDER BY start_date DESC LIMIT 1
                         """, region, default_diff)
-                        if row_res == None:
+                        if row_res is None:
                             logging.warn("%s: no jobs available. idling.", region)
                             await asyncio.sleep(60)  # a minute TODO make this smarter
                             asyncio.ensure_future(self.crawl_region(region))
+                            return
 
                         jobdate, delta_minutes = row_res
                         delta = datetime.timedelta(minutes=delta_minutes)
@@ -242,8 +248,8 @@ class Apigrabber(object):
     async def setup(self):
         async with self._pool.acquire() as con:
             await self._db_setup(con)
-            ## clean up after force quit (TODO - disabled for dev)
-            #await con.execute("DELETE FROM crawljobs WHERE finished=false")
+            # clean up after force quit (TODO - disabled for dev)
+            await con.execute("DELETE FROM crawljobs WHERE finished=false")
 
 
 async def startup():
