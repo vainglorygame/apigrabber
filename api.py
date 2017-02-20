@@ -42,6 +42,22 @@ class Apigrabber(object):
                 (id SERIAL, start_date TIMESTAMP,
                 end_date TIMESTAMP, finished BOOL, region TEXT)
             """)
+        # create master tables
+        for objecttype in ["match", "roster", "participant",
+                           "team", "player"]:
+            await con.execute("""
+                CREATE TABLE IF NOT EXISTS """ + objecttype + """ (
+                    id TEXT PRIMARY KEY NOT NULL,
+                    type TEXT NOT NULL,
+                    attributes JSONB,
+                    relationships JSONB)
+                """)
+            # create region partitions
+            # TODO use CHECK for regions once every object has a shardId
+            for region in self.regions:
+                await con.execute("CREATE TABLE IF NOT EXISTS " +
+                        objecttype + "_" + region +
+                        " (id TEXT PRIMARY KEY) INHERITS (" + objecttype + ")")
 
         # create past zombie job that marks the last data to fetch
         async with con.transaction():
@@ -55,21 +71,31 @@ class Apigrabber(object):
                 ON CONFLICT DO NOTHING;
             """, json.dumps([{"region": r} for r in self.regions]))
 
-    async def _db_insert(self, con, objects):
+    async def _db_insert(self, con, objects, ddate, region):
         """Insert a list of API response objects into respective tables."""
+        day = ddate.strftime("%Y_%m_%d")
+
+        def table(objtype):
+            """Return the partition the object belongs in."""
+            return (objtype + "_" + region +
+                    ("_" + day
+                     if objtype != "player"
+                     and objtype != "team"
+                     else ""))
+
         objectmap = {}
         for o in objects:
             try:
                 objectmap[o["type"]].append(o)
             except KeyError:
                 objectmap[o["type"]] = [o]
-                await con.execute("""
-                    CREATE TABLE IF NOT EXISTS """ + o["type"] + """ (
-                        id TEXT PRIMARY KEY NOT NULL,
-                        type TEXT NOT NULL,
-                        attributes JSONB,
-                        relationships JSONB)
-                    """)
+                # create a partition for the day
+                # players are not partitioned by day
+                await con.execute("CREATE TABLE IF NOT EXISTS " +
+                                      table(o["type"]) +
+                                  " (id TEXT PRIMARY KEY) INHERITS (" +
+                                      o["type"] + "_" + region +
+                                  ")")
 
         for otype, objs in objectmap.items():
             async with con.transaction():  # create savepoint
@@ -83,7 +109,7 @@ class Apigrabber(object):
                 # recent. TODO always keep the update condition in line
                 # with the data that is returned by the API.
                 await con.execute("""
-                    INSERT INTO """ + otype + """ AS j
+                    INSERT INTO """ + table(otype) + """ AS j
                         SELECT DISTINCT ON(id) * FROM
                         JSONB_TO_RECORDSET($1::JSONB)
                         AS jsn(id TEXT, type TEXT, attributes JSONB, relationships JSONB)
@@ -117,7 +143,9 @@ class Apigrabber(object):
 
                 logging.info("%s: (%s) received %s data objects",
                              region, jobid, len(matches))
-                await self._db_insert(con, matches)
+                # TODO to be more precise, jobs that return date over midnight
+                # should be split so they insert in the according table
+                await self._db_insert(con, matches, jobstart, region)
                 logging.info("%s: (%s) inserted",
                              region, jobid)
 
