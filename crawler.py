@@ -4,15 +4,14 @@ import asyncio
 import logging
 import aiohttp
 
-TOKEN = "aaa.bbb.ccc"
 APIURL = "https://api.dc01.gamelockerapp.com/"
 
 
 class Crawler(object):
-    def __init__(self):
+    def __init__(self, token):
         """Sets constants."""
         self._apiurl = APIURL
-        self._token = TOKEN
+        self._token = token
         self._pagelimit = 50
 
     async def _req(self, session, path, params=None):
@@ -31,14 +30,21 @@ class Crawler(object):
             "Authorization": "Bearer " + self._token,
             "X-TITLE-ID": "semc-vainglory",
             "Accept": "application/vnd.api+json",
-            "Content-Encoding": "gzip"
+            "Accept-Encoding": "gzip"
         }
         try:
-            async with session.get(self._apiurl + path, headers=headers,
-                                   params=params) as response:
-                assert response.status == 200
-                return await response.json()
-        except (aiohttp.errors.ClientResponseError, RuntimeError):
+            while True:
+                async with session.get(self._apiurl + path, headers=headers,
+                                       params=params) as response:
+                    if response.status == 429:
+                        logging.warning("hit by rate limit, retrying")
+                        await asyncio.sleep(10)
+                        continue
+                    assert response.status == 200
+                    return await response.json()
+        except (aiohttp.errors.ClientResponseError,
+                RuntimeError,
+                aiohttp.errors.ContentEncodingError):
             logging.warning("error connecting to API, retrying")
             return await self._req(session, path, params)
 
@@ -81,6 +87,10 @@ class Crawler(object):
                     break
 
                 data += res["data"] + res["included"]
+
+                if len(res["data"]) < 50:
+                    # asked for 50, got less -> exhausted
+                    break
 
                 if not forever:
                     break  # stop after one iteration
