@@ -33,11 +33,18 @@ class Crawler(object):
             "Content-Encoding": "gzip"
         }
         try:
-            async with session.get(self._apiurl + path, headers=headers,
-                                   params=params) as response:
-                assert response.status == 200
-                return await response.json()
-        except (aiohttp.errors.ClientResponseError, RuntimeError):
+            while True:
+                async with session.get(self._apiurl + path, headers=headers,
+                                       params=params) as response:
+                    if response.status == 429:
+                        logging.warning("hit by rate limit, retrying")
+                        await asyncio.sleep(10)
+                        continue
+                    assert response.status == 200
+                    return await response.json()
+        except (aiohttp.errors.ClientResponseError,
+                RuntimeError,
+                aiohttp.errors.ContentEncodingError):
             logging.warning("error connecting to API, retrying")
             return await self._req(session, path, params)
 
@@ -80,6 +87,10 @@ class Crawler(object):
                     break
 
                 data += res["data"] + res["included"]
+
+                if len(res["data"]) < 50:
+                    # asked for 50, got less -> exhausted
+                    break
 
                 if not forever:
                     break  # stop after one iteration

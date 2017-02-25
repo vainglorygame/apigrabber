@@ -256,7 +256,7 @@ class Apigrabber(object):
 
         for region in self.regions:
             await self.request_update(region)
-            for _ in range(5):
+            for _ in range(1):
                 # supports scaling :]
                 asyncio.ensure_future(self.crawl_region(region))
 
