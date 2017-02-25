@@ -4,15 +4,14 @@ import asyncio
 import logging
 import aiohttp
 
-TOKEN = "aaa.bbb.ccc"
 APIURL = "https://api.dc01.gamelockerapp.com/"
 
 
 class Crawler(object):
-    def __init__(self):
+    def __init__(self, token):
         """Sets constants."""
         self._apiurl = APIURL
-        self._token = TOKEN
+        self._token = token
         self._pagelimit = 50
 
     async def _req(self, session, path, params=None):

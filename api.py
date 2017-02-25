@@ -28,7 +28,9 @@ def iso2date(d):
 
 
 class Apigrabber(object):
-    def __init__(self, regions, first_fetch=None, last_fetch=None):
+    def __init__(self, regions, apitoken,
+                 first_fetch=None, last_fetch=None):
+        self._apitoken = apitoken
         self.update_live = False
         # TODO refactor this
         if first_fetch is None:
@@ -138,7 +140,7 @@ class Apigrabber(object):
     async def crawl_timeframe(self, region, jobid, jobstart, jobend):
         """Crawl a time frame forwards from `date` in `region`."""
         async with self._pool.acquire() as con:
-            api = crawler.Crawler()
+            api = crawler.Crawler(self._apitoken)
             async with con.transaction():
                 params = {
                     "filter[createdAt-start]": date2iso(jobstart),
@@ -267,6 +269,7 @@ class Apigrabber(object):
 
 async def startup():
     apigrabber = Apigrabber(
+        apitoken=os.environ["VAINSOCIAL_APITOKEN"],
         regions=os.environ["VAINSOCIAL_REGIONS"].split(","),
         first_fetch=os.environ.get("VAINSOCIAL_STARTDATE"),
         last_fetch=os.environ.get("VAINSOCIAL_ENDDATE")
