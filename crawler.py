@@ -12,7 +12,7 @@ class Crawler(object):
         """Sets constants."""
         self._apiurl = APIURL
         self._token = token
-        self._pagelimit = 50
+        self._pagelimit = 5
 
     async def _req(self, session, path, params=None):
         """Sends an API request and returns the response dict.
@@ -88,7 +88,7 @@ class Crawler(object):
 
                 data += res["data"] + res["included"]
 
-                if len(res["data"]) < 50:
+                if len(res["data"]) < self._pagelimit:
                     # asked for 50, got less -> exhausted
                     break
 
