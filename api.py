@@ -14,8 +14,8 @@ import crawler
 # SEMC API is a bit strict about the iso format
 def date2iso(d):
     """Convert datetime to iso8601 string."""
-    date = d.isoformat()
-    date = ".".join(date.split(".")[:-1])  # remove microseconds
+    date = d.replace(microsecond=0)
+    date = date.isoformat()
     date = date + "Z"
     return date
 
@@ -28,9 +28,19 @@ def iso2date(d):
 
 
 class Apigrabber(object):
-    def __init__(self):
-        #self.regions = ["na", "eu", "sg", "ea", "sa", "cn"]
-        self.regions = ["na", "eu"]
+    def __init__(self, regions, first_fetch=None, last_fetch=None):
+        self.update_live = False
+        # TODO refactor this
+        if first_fetch is None:
+            first_fetch = "2017-02-14T00:00:00Z"
+        if last_fetch is None:  # update this in 53 years
+            last_fetch = "2070-01-01T00:00:00Z"
+            self.update_live = True
+
+        # TODO first_fetch parameter is only valid on fresh databases
+        self.first_fetch = iso2date(first_fetch)  # when to end fetching history
+        self.last_fetch = iso2date(last_fetch)  # when to start fetching
+        self.regions = regions
 
     async def connect(self, **args):
         self._pool = await asyncpg.create_pool(**args)
@@ -63,13 +73,11 @@ class Apigrabber(object):
         async with con.transaction():
             await con.execute("""
                 INSERT INTO crawljobs(start_date, end_date, finished, region)
-                SELECT '2017-02-14T00:00:00Z'::TIMESTAMP,
-                       '2017-02-14T00:00:00Z'::TIMESTAMP,
-                       TRUE,
-                       region
+                SELECT $2, $2, TRUE, region
                 FROM JSONB_TO_RECORDSET($1::JSONB) AS jsn(region TEXT)
                 ON CONFLICT DO NOTHING;
-            """, json.dumps([{"region": r} for r in self.regions]))
+            """, json.dumps([{"region": r} for r in self.regions]),
+            self.first_fetch)
 
     async def _db_insert(self, con, objects, ddate, region):
         """Insert a list of API response objects into respective tables."""
@@ -215,12 +223,16 @@ class Apigrabber(object):
                 try:
                     async with con.transaction(isolation="serializable"):
                         # insert a job from now->now
+                        # (or last_fetch->last_fetch if asked)
                         # so history crawler picks up the time diff between
                         # now and the last query.
                         await con.fetchval("""
-                            INSERT INTO crawljobs(start_date, end_date, finished, region)
-                            VALUES (NOW(), NOW(), TRUE, $1)
-                        """, region)
+                            INSERT INTO crawljobs
+                                (start_date, end_date, finished, region)
+                            VALUES (
+                                LEAST(NOW(), $2),
+                                LEAST(NOW(), $2), TRUE, $1)
+                        """, region, self.last_fetch)
                         logging.info("%s: scheduled for live update", region)
                         break
                 except asyncpg.exceptions.SerializationError:
@@ -229,7 +241,8 @@ class Apigrabber(object):
         async def _recall_later():
             await asyncio.sleep(300)  # wait 5 min and repeat
             asyncio.ensure_future(self.request_update(region))
-        asyncio.ensure_future(_recall_later())
+        if self.update_live:
+            asyncio.ensure_future(_recall_later())
 
 
     async def start(self):
@@ -253,7 +266,11 @@ class Apigrabber(object):
 
 
 async def startup():
-    apigrabber = Apigrabber()
+    apigrabber = Apigrabber(
+        regions=os.environ["VAINSOCIAL_REGIONS"].split(","),
+        first_fetch=os.environ.get("VAINSOCIAL_STARTDATE"),
+        last_fetch=os.environ.get("VAINSOCIAL_ENDDATE")
+    )
     await apigrabber.connect(
         host=os.environ["POSTGRESQL_HOST"],
         port=os.environ["POSTGRESQL_PORT"],
