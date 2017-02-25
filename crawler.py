@@ -30,7 +30,7 @@ class Crawler(object):
             "Authorization": "Bearer " + self._token,
             "X-TITLE-ID": "semc-vainglory",
             "Accept": "application/vnd.api+json",
-            "Content-Encoding": "gzip"
+            "Accept-Encoding": "gzip"
         }
         try:
             while True:
