@@ -14,14 +14,14 @@ class Crawler(object):
         self._token = token
         self._pagelimit = 5
 
-    async def _req(self, session, path, params=None):
+    async def _req(self, session, path, params):
         """Sends an API request and returns the response dict.
 
         :param session: aiohttp client session.
         :type session: :class:`aiohttp.ClientSession`
         :param path: URL path.
         :type path: str
-        :param params: (optional) Request parameters.
+        :param params: Request parameters.
         :type params: dict
         :return: API response.
         :rtype: dict
@@ -32,84 +32,44 @@ class Crawler(object):
             "Accept": "application/vnd.api+json",
             "Accept-Encoding": "gzip"
         }
-        try:
-            while True:
+        while True:
+            try:
                 async with session.get(self._apiurl + path, headers=headers,
                                        params=params) as response:
                     if response.status == 429:
-                        logging.warning("hit by rate limit, retrying")
-                        await asyncio.sleep(10)
-                        continue
-                    assert response.status == 200
-                    return await response.json()
-        except (aiohttp.errors.ClientResponseError,
-                RuntimeError,
-                aiohttp.errors.ContentEncodingError):
-            logging.warning("error connecting to API, retrying")
-            return await self._req(session, path, params)
+                        logging.warning("rate limited, retrying")
+                    else:
+                        return await response.json()
+            except (aiohttp.errors.ContentEncodingError):
+                # API bug?
+                pass
+            await asyncio.sleep(10)
 
-    async def version(self):
-        """Returns the current API version."""
-
-        async with aiohttp.ClientSession() as session:
-            status = await self._req(session, "status")
-            return status["data"]["attributes"]["version"]
-
-    async def matches(self, region="na", params=None):
+    async def matches(self, params, region="na"):
         """Queries the API for matches and their related data.
 
         :param region: (optional) Region where the matches were played.
                        Defaults to "na" (North America).
         :type region: str
-        :param params: (optional) Additional filters.
+        :param params: Additional filters.
         :type params: dict
-        :return: Processed API response
-        :rtype: list of dict
         """
-        forever = False  # do not fetch until exhausted
-        if params is None:
-            params = dict()
-        if "page[limit]" not in params:
-            forever = True  # no limit specified, fetch all we can
-            params["page[limit]"] = self._pagelimit
-        if "page[offset]" not in params:
-            params["page[offset]"] = 0
-
-        data = []
+        params["page[offset]"] = 0
+        params["page[limit]"] = self._pagelimit
         async with aiohttp.ClientSession() as session:
             while True:
-                params["page[offset]"] += params["page[limit]"]
-                try:
-                    res = await self._req(session,
-                                          "shards/" + region + "/matches",
-                                          params)
-                except AssertionError:
+                res = await self._req(session,
+                                      "shards/" + region + "/matches",
+                                      params)
+
+                if "errors" in res:
+                    logging.warn("API returned error: '%s'",
+                                 res["errors"])
                     break
 
-                data += res["data"] + res["included"]
+                yield res
 
                 if len(res["data"]) < self._pagelimit:
                     # asked for 50, got less -> exhausted
                     break
-
-                if not forever:
-                    break  # stop after one iteration
-
-        return data
-
-    async def matches_since(self, date, region="na", params=None):
-        """Queries the API for new matches since the given date.
-
-        :param region: see `matches`
-        :type region: str
-        :param date: Start date in ISO8601 format.
-        :type date: str
-        :param params: (optional) Additional filters.
-        :type params: dict
-        :return: Processed API response
-        :rtype: list of dict
-        """
-        if params is None:
-            params = dict()
-        params["filter[createdAt-start]"] = date
-        return await self.matches(region, params)
+                params["page[offset]"] += params["page[limit]"]
