@@ -43,6 +43,12 @@ class Worker(object):
         """Finish a job."""
         api = crawler.Crawler(self._apitoken)
         logging.debug("%s: getting matches from API", jobid)
+        # if a player is queried, pass that information to processor
+        if "filter[playerNames]" in payload["params"]:
+            playername = payload["params"]["filter[playerNames]"]
+        else:
+            playername = ""
+
         async with self._pool.acquire() as con:
             async for data in api.matches(region=payload["region"],
                                           params=payload["params"]):
@@ -54,6 +60,7 @@ class Worker(object):
                                               priority=priority,
                                               payload={
                                                   "id": matchid["id"],
+                                                  "playername": playername
                                               })
 
     async def _work(self):
