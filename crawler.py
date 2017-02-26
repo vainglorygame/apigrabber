@@ -43,7 +43,10 @@ class Crawler(object):
                         logging.warning("rate limited, retrying")
                     else:
                         return await response.json()
-            except (aiohttp.errors.ContentEncodingError):
+            except (aiohttp.errors.ContentEncodingError,
+                    aiohttp.errors.ServerDisconnectedError,
+                    aiohttp.errors.ClientResponseError,
+                    aiohttp.errors.ClientOSError):
                 # API bug?
                 pass
             await asyncio.sleep(10)
