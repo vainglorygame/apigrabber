@@ -31,21 +31,8 @@ class Worker(object):
         async with self._pool.acquire() as con:
             await con.execute("""
                 CREATE TABLE IF NOT EXISTS
-                match (
-                    id TEXT PRIMARY KEY,
-                    type TEXT DEFAULT 'match',
-                    attributes JSONB,
-                    relations JSONB
-                )
-                """)
-            await con.execute("""
-                CREATE TABLE IF NOT EXISTS
-                player (
-                    id TEXT PRIMARY KEY,
-                    type TEXT DEFAULT 'player',
-                    attributes JSONB
-                )
-                """)
+                match (id TEXT PRIMARY KEY, data JSONB)
+            """)
 
         root = os.path.realpath(
             os.path.join(os.getcwd(), os.path.dirname(__file__)))
@@ -60,17 +47,13 @@ class Worker(object):
             async for data in api.matches(region=payload["region"],
                                           params=payload["params"]):
                 logging.debug("%s: inserting into database", jobid)
-                objects = await con.fetch(self._insertquery, json.dumps(data))
-                logging.info("%s: inserted %s", jobid,
-                             {t: len([s for s in objects if s["type"] == t])
-                              for t in set([e["type"] for e in objects])}
-                            )
-                for obj in objects:
+                matchids = await con.fetch(self._insertquery, json.dumps(data))
+                logging.info("%s: inserted %s matches", jobid, len(matchids))
+                for matchid in matchids:
                     await self._queue.request(jobtype="process",
                                               priority=priority,
                                               payload={
-                                                  "id": obj["id"],
-                                                  "type": obj["type"]
+                                                  "id": matchid["id"],
                                               })
 
     async def _work(self):
