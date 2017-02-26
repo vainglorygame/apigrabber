@@ -60,13 +60,18 @@ class Worker(object):
             async for data in api.matches(region=payload["region"],
                                           params=payload["params"]):
                 logging.debug("%s: inserting into database", jobid)
-                ids = await con.fetch(self._insertquery, json.dumps(data))
-                logging.info("%s: inserted %s objects", jobid, len(ids))
-                object_ids = [i["id"] for i in ids]
-                for object_id in object_ids:
+                objects = await con.fetch(self._insertquery, json.dumps(data))
+                logging.info("%s: inserted %s", jobid,
+                             {t: len([s for s in objects if s["type"] == t])
+                              for t in set([e["type"] for e in objects])}
+                            )
+                for obj in objects:
                     await self._queue.request(jobtype="process",
-                                               priority=priority,
-                                              payload={"id": object_id})
+                                              priority=priority,
+                                              payload={
+                                                  "id": obj["id"],
+                                                  "type": obj["type"]
+                                              })
 
     async def _work(self):
         """Fetch a job and run it."""

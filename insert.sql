@@ -68,15 +68,15 @@
  insert_matches AS (
    INSERT INTO match SELECT * FROM linked_matches
    ON CONFLICT(id) DO NOTHING
-   RETURNING id -- TODO conflict shouldn't happen in prod
+   RETURNING type, id -- TODO conflict shouldn't happen in prod
  ),
  insert_players AS (
    INSERT INTO player SELECT * FROM linked_players
    ON CONFLICT(id) DO
    UPDATE SET attributes=EXCLUDED.attributes
    WHERE (player.attributes->'stats'->>'played')::int < (EXCLUDED.attributes->'stats'->>'played')::int
-   RETURNING id
+   RETURNING type, id
  )
- SELECT * FROM insert_matches
+ SELECT type, id FROM insert_matches
  UNION
- SELECT * FROM insert_players
+ SELECT type, id FROM insert_players
