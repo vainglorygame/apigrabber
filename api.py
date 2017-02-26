@@ -69,8 +69,12 @@ class Worker(object):
         if jobid is None:
             raise LookupError("no jobs available")
         logging.debug("%s: starting job", jobid)
-        await self._execute_job(jobid, payload, priority)
-        await self._queue.finish(jobid)
+        try:
+            await self._execute_job(jobid, payload, priority)
+            await self._queue.finish(jobid)
+        except crawler.ApiError as error:
+            logging.warning("%s: failed", jobid)
+            await self._queue.fail(jobid, error.args[0])
         logging.debug("%s: finished job", jobid)
 
     async def run(self):

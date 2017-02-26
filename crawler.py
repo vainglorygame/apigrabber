@@ -7,6 +7,9 @@ import aiohttp
 APIURL = "https://api.dc01.gamelockerapp.com/"
 
 
+class ApiError(Exception):
+    pass
+
 class Crawler(object):
     def __init__(self, token):
         """Sets constants."""
@@ -65,7 +68,7 @@ class Crawler(object):
                 if "errors" in res:
                     logging.warn("API returned error: '%s'",
                                  res["errors"])
-                    break
+                    raise ApiError(res["errors"])
 
                 yield res
 
