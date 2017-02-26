@@ -52,7 +52,7 @@ class Worker(object):
         with open(root + "/insert.sql", "r", encoding="utf-8-sig") as file:
             self._insertquery = file.read()
 
-    async def _execute_job(self, jobid, payload):
+    async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         api = crawler.Crawler(self._apitoken)
         logging.debug("%s: getting matches from API", jobid)
@@ -65,15 +65,16 @@ class Worker(object):
                 object_ids = [i["id"] for i in ids]
                 for object_id in object_ids:
                     await self._queue.request(jobtype="process",
+                                               priority=priority,
                                               payload={"id": object_id})
 
     async def _work(self):
         """Fetch a job and run it."""
-        jobid, payload = await self._queue.acquire(jobtype="grab")
+        jobid, payload, priority = await self._queue.acquire(jobtype="grab")
         if jobid is None:
             raise LookupError("no jobs available")
         logging.debug("%s: starting job", jobid)
-        await self._execute_job(jobid, payload)
+        await self._execute_job(jobid, payload, priority)
         await self._queue.finish(jobid)
         logging.debug("%s: finished job", jobid)
 
