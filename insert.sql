@@ -35,7 +35,7 @@ linked_participants AS (
       'data', participants.data-'relationships',
       'relations',  TO_JSONB(ARRAY(
         SELECT * FROM linked_players
-        WHERE participants.data->'relationships'->'player'->'data' = JSONB_BUILD_OBJECT('id', linked_players.data->>'id', 'type', linked_players.data->>'type')
+        WHERE participants.data->'relationships'->'player'->'data' = JSONB_BUILD_OBJECT('id', linked_players.data->'data'->>'id', 'type', linked_players.data->'data'->>'type')
       ))
     ) AS data
   FROM participants
