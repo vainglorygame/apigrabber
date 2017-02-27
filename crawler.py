@@ -15,7 +15,7 @@ class Crawler(object):
         """Sets constants."""
         self._apiurl = APIURL
         self._token = token
-        self._pagelimit = 5
+        self._pagelimit = 50
 
     async def _req(self, session, path, params):
         """Sends an API request and returns the response dict.
