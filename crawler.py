@@ -7,6 +7,9 @@ import aiohttp
 APIURL = "https://api.dc01.gamelockerapp.com/"
 
 
+class ApiError(Exception):
+    pass
+
 class Crawler(object):
     def __init__(self, token):
         """Sets constants."""
@@ -40,7 +43,10 @@ class Crawler(object):
                         logging.warning("rate limited, retrying")
                     else:
                         return await response.json()
-            except (aiohttp.errors.ContentEncodingError):
+            except (aiohttp.errors.ContentEncodingError,
+                    aiohttp.errors.ServerDisconnectedError,
+                    aiohttp.errors.ClientResponseError,
+                    aiohttp.errors.ClientOSError):
                 # API bug?
                 pass
             await asyncio.sleep(10)
@@ -65,7 +71,7 @@ class Crawler(object):
                 if "errors" in res:
                     logging.warn("API returned error: '%s'",
                                  res["errors"])
-                    break
+                    raise ApiError(res["errors"])
 
                 yield res
 
