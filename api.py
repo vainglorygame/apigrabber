@@ -86,21 +86,24 @@ class Worker(object):
                 logging.info("nothing to do, idling")
                 await asyncio.sleep(10)
 
+    async def start(self, number=1):
+        """Start jobs in background."""
+        for _ in range(number):
+            asyncio.ensure_future(self.run())
 
 async def startup():
-    for _ in range(1):
-        worker = Worker(
-            apitoken=os.environ["VAINSOCIAL_APITOKEN"]
-        )
-        await worker.connect(
-            host=os.environ["POSTGRESQL_HOST"],
-            port=os.environ["POSTGRESQL_PORT"],
-            user=os.environ["POSTGRESQL_USER"],
-            password=os.environ["POSTGRESQL_PASSWORD"],
-            database=os.environ["POSTGRESQL_DB"]
-        )
-        await worker.setup()
-        await worker.run()
+    worker = Worker(
+        apitoken=os.environ["VAINSOCIAL_APITOKEN"]
+    )
+    await worker.connect(
+        host=os.environ["POSTGRESQL_HOST"],
+        port=os.environ["POSTGRESQL_PORT"],
+        user=os.environ["POSTGRESQL_USER"],
+        password=os.environ["POSTGRESQL_PASSWORD"],
+        database=os.environ["POSTGRESQL_DB"]
+    )
+    await worker.setup()
+    await worker.start()
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
