@@ -42,7 +42,6 @@ class Worker(object):
     async def _execute_job(self, jobid, payload, priority):
         """Finish a job."""
         api = crawler.Crawler(self._apitoken)
-        logging.debug("%s: getting matches from API", jobid)
         # if a player is queried, pass that information to processor
         if "filter[playerNames]" in payload["params"]:
             playername = payload["params"]["filter[playerNames]"]
@@ -52,9 +51,9 @@ class Worker(object):
         async with self._pool.acquire() as con:
             async for data in api.matches(region=payload["region"],
                                           params=payload["params"]):
-                logging.debug("%s: inserting into database", jobid)
                 matchids = await con.fetch(self._insertquery, json.dumps(data))
-                logging.info("%s: inserted %s matches", jobid, len(matchids))
+                logging.debug("%s: inserted %s matches from API into database",
+                              jobid, len(matchids))
                 for matchid in matchids:
                     await self._queue.request(jobtype="process",
                                               priority=priority,
@@ -68,14 +67,11 @@ class Worker(object):
         jobid, payload, priority = await self._queue.acquire(jobtype="grab")
         if jobid is None:
             raise LookupError("no jobs available")
-        logging.debug("%s: starting job", jobid)
         try:
             await self._execute_job(jobid, payload, priority)
             await self._queue.finish(jobid)
         except crawler.ApiError as error:
-            logging.warning("%s: failed", jobid)
             await self._queue.fail(jobid, error.args[0])
-        logging.debug("%s: finished job", jobid)
 
     async def run(self):
         """Start jobs forever."""
@@ -83,7 +79,6 @@ class Worker(object):
             try:
                 await self._work()
             except LookupError:
-                logging.info("nothing to do, idling")
                 await asyncio.sleep(10)
 
     async def start(self, number=1):
