@@ -79,7 +79,7 @@ class Worker(object):
             try:
                 await self._work()
             except LookupError:
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
 
     async def start(self, number=1):
         """Start jobs in background."""
@@ -98,7 +98,7 @@ async def startup():
         database=os.environ["POSTGRESQL_DB"]
     )
     await worker.setup()
-    await worker.start()
+    await worker.start(2)
 
 logging.basicConfig(level=logging.DEBUG)
 loop = asyncio.get_event_loop()
