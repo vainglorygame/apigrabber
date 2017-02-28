@@ -15,7 +15,7 @@ class Crawler(object):
         """Sets constants."""
         self._apiurl = APIURL
         self._token = token
-        self._pagelimit = 5
+        self._pagelimit = 50
 
     async def _req(self, session, path, params):
         """Sends an API request and returns the response dict.
@@ -71,6 +71,11 @@ class Crawler(object):
                 if "errors" in res:
                     logging.warn("API returned error: '%s'",
                                  res["errors"])
+                    if res["errors"][0].get("title") == "Not Found" \
+                       and params["page[offset]"] > 0:
+                        # a query returned exactly 50 matches
+                        # which is expected, so don't fail.
+                        return
                     raise ApiError(res["errors"])
 
                 yield res
