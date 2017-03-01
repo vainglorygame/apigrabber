@@ -104,7 +104,10 @@ async def startup():
 
 
 logging.basicConfig(
-    filename="logs/apigrabber.log",
+    filename=os.path.realpath(
+        os.path.join(os.getcwd(),
+                     os.path.dirname(__file__))) +
+        "/logs/apigrabber.log",
     filemode="a",
     level=logging.DEBUG
 )
