@@ -7,22 +7,20 @@ import json
 import asyncpg
 
 import crawler
-import joblib.joblib
+import joblib.worker
 
 
-class Worker(object):
+class Apigrabber(joblib.worker.Worker):
     def __init__(self, apitoken):
         self._apitoken = apitoken
-        self._queue = None
         self._pool = None
         self._insertquery = ""
+        super().__init__(jobtype="grab")
 
     async def connect(self, **args):
         """Connect to database."""
         logging.warning("connecting to database")
-        self._queue = joblib.joblib.JobQueue()
-        await self._queue.connect(**args)
-        await self._queue.setup()
+        await super().connect(**args)
         self._pool = await asyncpg.create_pool(**args)
 
     async def setup(self):
@@ -49,47 +47,25 @@ class Worker(object):
             playername = ""
 
         async with self._pool.acquire() as con:
-            async for data in api.matches(region=payload["region"],
-                                          params=payload["params"]):
-                matchids = await con.fetch(self._insertquery, json.dumps(data))
-                logging.debug("%s: inserted %s matches from API into database",
-                              jobid, len(matchids))
-                for matchid in matchids:
-                    await self._queue.request(jobtype="process",
-                                              priority=priority,
-                                              payload={
-                                                  "id": matchid["id"],
-                                                  "playername": playername
-                                              })
-
-    async def _work(self):
-        """Fetch a job and run it."""
-        jobid, payload, priority = await self._queue.acquire(jobtype="grab")
-        if jobid is None:
-            raise LookupError("no jobs available")
-        try:
-            await self._execute_job(jobid, payload, priority)
-            await self._queue.finish(jobid)
-        except crawler.ApiError as error:
-            logging.warning("%s: failed with %s", jobid,
-                            error.args[0])
-            await self._queue.fail(jobid, error.args[0])
-
-    async def run(self):
-        """Start jobs forever."""
-        while True:
             try:
-                await self._work()
-            except LookupError:
-                await asyncio.sleep(1)
+                async for data in api.matches(region=payload["region"],
+                                              params=payload["params"]):
+                    matchids = await con.fetch(self._insertquery, json.dumps(data))
+                    logging.debug("%s: inserted %s matches from API into database",
+                                  jobid, len(matchids))
+                    for matchid in matchids:
+                        await self._queue.request(jobtype="process",
+                                                  priority=priority,
+                                                  payload={
+                                                      "id": matchid["id"],
+                                                      "playername": playername
+                                                  })
+            except crawler.ApiError as error:
+                raise joblib.worker.JobFailed(error.args[0])
 
-    async def start(self, number=1):
-        """Start jobs in background."""
-        for _ in range(number):
-            asyncio.ensure_future(self.run())
 
 async def startup():
-    worker = Worker(
+    worker = Apigrabber(
         apitoken=os.environ["VAINSOCIAL_APITOKEN"]
     )
     await worker.connect(
