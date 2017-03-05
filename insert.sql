@@ -67,7 +67,7 @@ linked_matches AS (
 ),
 -- insert!
 insert_matches AS (
-  INSERT INTO match(id, data) SELECT * FROM linked_matches
+  INSERT INTO match(id, data) SELECT * FROM linked_matches WHERE linked_matches.data->'data'->'attributes'->>'gameMode'='casual' OR linked_matches.data->'data'->'attributes'->>'gameMode'='ranked'
   ON CONFLICT(id) DO NOTHING
   RETURNING id
 )
