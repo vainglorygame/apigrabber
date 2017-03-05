@@ -1,5 +1,6 @@
 #!/usr/bin/python
 
+import json
 import asyncio
 import logging
 import aiohttp
@@ -46,7 +47,8 @@ class Crawler(object):
             except (aiohttp.errors.ContentEncodingError,
                     aiohttp.errors.ServerDisconnectedError,
                     aiohttp.errors.ClientResponseError,
-                    aiohttp.errors.ClientOSError):
+                    aiohttp.errors.ClientOSError,
+                    json.decoder.JSONDecodeError):
                 # API bug?
                 logging.warning("API error, retrying")
                 pass
