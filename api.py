@@ -50,33 +50,36 @@ class Apigrabber(joblib.worker.Worker):
             try:
                 async for data in api.matches(region=payload["region"],
                                               params=payload["params"]):
-                    matchids = await con.fetch(self._insertquery, json.dumps(data))
-                    logging.debug("%s: inserted %s matches from API into database",
-                                  jobid, len(matchids))
-                    for matchid in matchids:
-                        await self._queue.request(jobtype="process",
-                                                  priority=priority,
-                                                  payload={
-                                                      "id": matchid["id"],
-                                                      "playername": playername
-                                                  })
+                    async with con.transaction():
+                        matchids = await con.fetch(
+                            self._insertquery, json.dumps(data))
+                        logging.debug("%s: inserted %s matches from API into database",
+                                      jobid, len(matchids))
+                    payloads = [{
+                        "id": mat["id"],
+                        "playername": playername
+                    } for mat in matchids]
+                    await self._queue.request(jobtype="process",
+                                              payload=payloads,
+                                              priority=priority)
             except crawler.ApiError as error:
                 raise joblib.worker.JobFailed(error.args[0])
 
 
 async def startup():
-    worker = Apigrabber(
-        apitoken=os.environ["VAINSOCIAL_APITOKEN"]
-    )
-    await worker.connect(
-        host=os.environ["POSTGRESQL_HOST"],
-        port=os.environ["POSTGRESQL_PORT"],
-        user=os.environ["POSTGRESQL_USER"],
-        password=os.environ["POSTGRESQL_PASSWORD"],
-        database=os.environ["POSTGRESQL_DB"]
-    )
-    await worker.setup()
-    await worker.start(2)
+    for _ in range(1):
+        worker = Apigrabber(
+            apitoken=os.environ["VAINSOCIAL_APITOKEN"]
+        )
+        await worker.connect(
+            host=os.environ["POSTGRESQL_HOST"],
+            port=os.environ["POSTGRESQL_PORT"],
+            user=os.environ["POSTGRESQL_USER"],
+            password=os.environ["POSTGRESQL_PASSWORD"],
+            database=os.environ["POSTGRESQL_DB"]
+        )
+        await worker.setup()
+        await worker.start()
 
 
 logging.basicConfig(

@@ -48,6 +48,7 @@ class Crawler(object):
                     aiohttp.errors.ClientResponseError,
                     aiohttp.errors.ClientOSError):
                 # API bug?
+                logging.warning("API error, retrying")
                 pass
             await asyncio.sleep(10)
 
