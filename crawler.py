@@ -49,10 +49,9 @@ class Crawler(object):
                     aiohttp.errors.ClientResponseError,
                     aiohttp.errors.ClientOSError,
                     LookupError,
-                    json.decoder.JSONDecodeError):
+                    json.decoder.JSONDecodeError) as err:
                 # API bug?
-                logging.warning("API error, retrying")
-                pass
+                logging.error("API error '%s', retrying", err)
             await asyncio.sleep(10)
 
     async def matches(self, params, region="na"):
