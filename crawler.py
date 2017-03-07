@@ -48,6 +48,7 @@ class Crawler(object):
                     aiohttp.errors.ServerDisconnectedError,
                     aiohttp.errors.ClientResponseError,
                     aiohttp.errors.ClientOSError,
+                    LookupError,
                     json.decoder.JSONDecodeError):
                 # API bug?
                 logging.warning("API error, retrying")
