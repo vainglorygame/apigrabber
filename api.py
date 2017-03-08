@@ -6,7 +6,7 @@ import logging
 import json
 import asyncpg
 
-import crawler
+from . import crawler
 import joblib.worker
 
 
@@ -82,18 +82,19 @@ async def startup():
         await worker.start()
 
 
-logging.basicConfig(
-    filename=os.path.realpath(
-        os.path.join(os.getcwd(),
-                     os.path.dirname(__file__))) +
-        "/logs/apigrabber.log",
-    filemode="a",
-    level=logging.DEBUG
-)
-console = logging.StreamHandler()
-console.setLevel(logging.WARNING)
-logging.getLogger("").addHandler(console)
+if __name__ == "__main__":
+    logging.basicConfig(
+        filename=os.path.realpath(
+            os.path.join(os.getcwd(),
+                         os.path.dirname(__file__))) +
+            "/logs/apigrabber.log",
+        filemode="a",
+        level=logging.DEBUG
+    )
+    console = logging.StreamHandler()
+    console.setLevel(logging.WARNING)
+    logging.getLogger("").addHandler(console)
 
-loop = asyncio.get_event_loop()
-loop.run_until_complete(startup())
-loop.run_forever()
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(startup())
+    loop.run_forever()
