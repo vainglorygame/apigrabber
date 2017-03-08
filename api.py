@@ -48,6 +48,8 @@ class Apigrabber(joblib.worker.Worker):
             playername = ""
 
         async with self._pool.acquire() as con:
+            logging.debug("%s: running on %s with parameters '%s'",
+                          jobid, payload["region"], payload["params"])
             try:
                 async for data in api.matches(region=payload["region"],
                                               params=payload["params"]):
@@ -64,6 +66,8 @@ class Apigrabber(joblib.worker.Worker):
                                               payload=payloads,
                                               priority=priority)
             except crawler.ApiError as error:
+                logging.warning("%s: API returned error '%s'",
+                                jobid, error.args[0])
                 raise joblib.worker.JobFailed(error.args[0])
 
 

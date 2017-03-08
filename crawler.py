@@ -72,8 +72,6 @@ class Crawler(object):
                                       params)
 
                 if "errors" in res:
-                    logging.warn("API returned error: '%s'",
-                                 res["errors"])
                     if res["errors"][0].get("title") == "Not Found" \
                        and params["page[offset]"] > 0:
                         # a query returned exactly 50 matches
