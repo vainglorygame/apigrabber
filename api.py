@@ -21,7 +21,8 @@ class Apigrabber(joblib.worker.Worker):
         """Connect to database."""
         logging.warning("connecting to database")
         await super().connect(**args)
-        self._pool = await asyncpg.create_pool(**args)
+        self._pool = await asyncpg.create_pool(min_size=1,
+                                               **args)
 
     async def setup(self):
         """Initialize the database."""
