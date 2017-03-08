@@ -6,7 +6,7 @@ import logging
 import json
 import asyncpg
 
-from . import crawler
+import crawler
 import joblib.worker
 
 
