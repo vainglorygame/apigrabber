@@ -56,8 +56,8 @@ class Apigrabber(joblib.worker.Worker):
                     async with con.transaction():
                         matchids = await con.fetch(
                             self._insertquery, json.dumps(data))
-                        logging.debug("%s: inserted %s matches from API into database",
-                                      jobid, len(matchids))
+                        logging.info("%s: inserted %s matches for player '%s' from API into database",
+                                      jobid, len(matchids), playername)
                     payloads = [{
                         "id": mat["id"],
                         "playername": playername
