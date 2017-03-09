@@ -71,4 +71,4 @@ insert_matches AS (
   ON CONFLICT(id) DO NOTHING
   RETURNING id
 )
-SELECT id FROM insert_matches
+SELECT DISTINCT id FROM insert_matches
