@@ -66,7 +66,8 @@ class Apigrabber(joblib.worker.Worker):
         except crawler.ApiError as error:
             logging.warning("%s: API returned error '%s'",
                             jobid, error.args[0])
-            raise joblib.worker.JobFailed(error.args[0])
+            raise joblib.worker.JobFailed(error.args[0],
+                                          False)  # not critical
 
 
 async def startup():
