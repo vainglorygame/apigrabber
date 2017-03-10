@@ -43,7 +43,12 @@ class Crawler(object):
                     if response.status == 429:
                         logging.warning("rate limited, retrying")
                     else:
-                        return await response.json()
+                        if response.status > 500:
+                            logging.error("API server error %s",
+                                          response.status)
+                            raise ApiError(response.status)
+                        else:
+                            return await response.json()
             except (aiohttp.errors.ContentEncodingError,
                     aiohttp.errors.ServerDisconnectedError,
                     aiohttp.errors.ClientResponseError,
