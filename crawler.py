@@ -57,7 +57,7 @@ class Crawler(object):
                     json.decoder.JSONDecodeError) as err:
                 # API bug?
                 logging.error("API error '%s', retrying", err)
-            await asyncio.sleep(10)
+            await asyncio.sleep(5)
 
     async def matches(self, params, region="na"):
         """Queries the API for matches and their related data.
