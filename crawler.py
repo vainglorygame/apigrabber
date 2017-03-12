@@ -61,7 +61,7 @@ class Crawler(object):
                 retries -= 1
                 if retries == 0:
                     logging.error("Giving up")
-                    raise ApiError(err)
+                    raise ApiError(str(err))
 
             await asyncio.sleep(5)
 
