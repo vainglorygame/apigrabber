@@ -36,6 +36,7 @@ class Crawler(object):
             "Accept": "application/vnd.api+json",
             "Accept-Encoding": "gzip"
         }
+        retries = 5
         while True:
             try:
                 async with session.get(self._apiurl + path, headers=headers,
@@ -57,6 +58,11 @@ class Crawler(object):
                     json.decoder.JSONDecodeError) as err:
                 # API bug?
                 logging.error("API error '%s', retrying", err)
+                retries -= 1
+                if retries == 0:
+                    logging.error("Giving up")
+                    raise ApiError(err)
+
             await asyncio.sleep(5)
 
     async def matches(self, params, region="na"):
