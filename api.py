@@ -60,7 +60,7 @@ class Apigrabber(joblib.worker.Worker):
                     "id": mat["id"],
                     "playername": playername
                 } for mat in matchids]
-                await self._queue.request(jobtype="process",
+                await self.request(jobtype="process",
                                           payload=payloads,
                                           priority=priority)
         except crawler.ApiError as error:
