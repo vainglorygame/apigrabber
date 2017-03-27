@@ -1,9 +1,9 @@
 #!/usr/bin/python
 
 import json
-import asyncio
+import time
 import logging
-import aiohttp
+import requests
 
 APIURL = "https://api.dc01.gamelockerapp.com/"
 
@@ -18,11 +18,9 @@ class Crawler(object):
         self._token = token
         self._pagelimit = 50
 
-    async def _req(self, session, path, params):
+    def _req(self, path, params):
         """Sends an API request and returns the response dict.
 
-        :param session: aiohttp client session.
-        :type session: :class:`aiohttp.ClientSession`
         :param path: URL path.
         :type path: str
         :param params: Request parameters.
@@ -39,23 +37,19 @@ class Crawler(object):
         retries = 5
         while True:
             try:
-                async with session.get(self._apiurl + path, headers=headers,
-                                       params=params) as response:
-                    if response.status == 429:
-                        logging.warning("rate limited, retrying")
+                response = requests.get(self._apiurl + path,
+                                        headers=headers,
+                                        params=params)
+                if response.status_code == 429:
+                    logging.warning("rate limited, retrying")
+                else:
+                    if response.status_code > 500:
+                        logging.error("API server error %s",
+                                      response.status_code)
+                        raise ApiError(response.status_code)
                     else:
-                        if response.status > 500:
-                            logging.error("API server error %s",
-                                          response.status)
-                            raise ApiError(response.status)
-                        else:
-                            return await response.json()
-            except (aiohttp.errors.ContentEncodingError,
-                    aiohttp.errors.ServerDisconnectedError,
-                    aiohttp.errors.ClientResponseError,
-                    aiohttp.errors.ClientOSError,
-                    LookupError,
-                    json.decoder.JSONDecodeError) as err:
+                        return response.json()
+            except (json.decoder.JSONDecodeError) as err:
                 # API bug?
                 logging.error("API error '%s', retrying", err)
                 retries -= 1
@@ -63,9 +57,9 @@ class Crawler(object):
                     logging.error("Giving up")
                     raise ApiError(str(err))
 
-            await asyncio.sleep(5)
+            time.sleep(5)
 
-    async def matches(self, params, region="na"):
+    def matches(self, params, region="na"):
         """Queries the API for matches and their related data.
 
         :param region: (optional) Region where the matches were played.
@@ -76,23 +70,21 @@ class Crawler(object):
         """
         params["page[offset]"] = 0
         params["page[limit]"] = self._pagelimit
-        async with aiohttp.ClientSession() as session:
-            while True:
-                res = await self._req(session,
-                                      "shards/" + region + "/matches",
-                                      params)
+        while True:
+            res = self._req("shards/" + region + "/matches",
+                            params)
 
-                if "errors" in res:
-                    if res["errors"][0].get("title") == "Not Found" \
-                       and params["page[offset]"] > 0:
-                        # a query returned exactly 50 matches
-                        # which is expected, so don't fail.
-                        return
-                    raise ApiError(res["errors"])
+            if "errors" in res:
+                if res["errors"][0].get("title") == "Not Found" \
+                   and params["page[offset]"] > 0:
+                    # a query returned exactly 50 matches
+                    # which is expected, so don't fail.
+                    return
+                raise ApiError(res["errors"])
 
-                yield res
+            yield res
 
-                if len(res["data"]) < self._pagelimit:
-                    # asked for 50, got less -> exhausted
-                    break
-                params["page[offset]"] += params["page[limit]"]
+            if len(res["data"]) < self._pagelimit:
+                # asked for 50, got less -> exhausted
+                break
+            params["page[offset]"] += params["page[limit]"]
