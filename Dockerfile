@@ -1,5 +1,9 @@
-FROM python:3.6-alpine
-ADD requirements.txt /code/requirements.txt
-WORKDIR /code
-RUN pip install -r requirements.txt
-CMD ["python", "worker.py"]
+FROM node:7.7-alpine
+
+RUN mkdir -p /usr/src/app
+WORKDIR /usr/src/app
+
+COPY . /usr/src/app
+RUN npm install && npm cache clean
+
+CMD ["node", "worker.js"]
