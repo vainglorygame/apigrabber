@@ -32,7 +32,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 },
                 json: true,
                 gzip: true
-            };
+            }, failed = false;
             opts.qs = payload.params;
             try {
                 console.log("API request: %j", opts.qs);
@@ -50,10 +50,12 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                     exhausted = true;
                 }
                 console.log(err.statusCode);
+                failed = true;
             }
 
             // next page
-            payload.params["page[offset]"] += payload.params["page[limit]"]
+            if (!failed)
+                payload.params["page[offset]"] += payload.params["page[limit]"]
         }
 
         console.log("done");
