@@ -1,9 +1,13 @@
 #!/usr/bin/node
 /* jshint esnext:true */
+'use strict';
 
 var amqp = require("amqplib"),
     request = require("request-promise"),
-    sleep = require("sleep-promise");
+    sleep = require("sleep-promise"),
+    Bluebird = require("bluebird"),
+    jsonapi = Bluebird.promisifyAll(require("superagent-jsonapify/common")),
+    JSON_ = require("json_");
 
 var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost";
@@ -18,8 +22,8 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
     await ch.prefetch(1);
 
     ch.consume("grab", async (msg) => {
-        let exhausted = false;
-        payload = JSON.parse(msg.content);
+        let exhausted = false,
+            payload = JSON.parse(msg.content);
         payload.params["page[limit]"] = payload.params["page[limit]"] || 50;
         payload.params["page[offset]"] = payload.params["page[offset]"] || 0;
 
@@ -36,9 +40,12 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             opts.qs = payload.params;
             try {
                 console.log("API request: %j", opts.qs);
-                res = await request(opts);
-                console.log("got a few matches");
-                await ch.sendToQueue("process", new Buffer(JSON.stringify(res)), { persistent: true });
+                let res = await request(opts);
+                // JSON_: stringify snakeCase -> camel_case
+                let matches = await jsonapi.parse(JSON_.stringify(res));  // TODO parse, stringify, parse, stringify… -> inefficient
+                matches.data.forEach(async (match) => {
+                    await ch.sendToQueue("process", new Buffer(JSON.stringify(match)), { persistent: true });
+                });
             } catch (err) {
                 if (err.statusCode == 429) {
                     await sleep(1000);
