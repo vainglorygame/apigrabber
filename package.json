@@ -3,6 +3,15 @@
   "version": "2.0.0",
   "description": "",
   "main": "worker.js",
+  "dependencies": {
+    "amqplib": "^0.5.1",
+    "json_": "^1.0.0",
+    "request": "^2.81.0",
+    "request-promise": "^4.2.0",
+    "superagent-jsonapify": "^1.4.4",
+    "sleep-promise": "^2.0.0"
+  },
+  "devDependencies": {},
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
