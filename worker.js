@@ -5,9 +5,8 @@
 var amqp = require("amqplib"),
     request = require("request-promise"),
     sleep = require("sleep-promise"),
-    Bluebird = require("bluebird"),
-    jsonapi = Bluebird.promisifyAll(require("superagent-jsonapify/common")),
-    JSON_ = require("json_");
+    snakeCaseKeys = require("snakecase-keys"),
+    jsonapi = require("./jsonapi");
 
 var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost";
@@ -40,12 +39,32 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             opts.qs = payload.params;
             try {
                 console.log("API request: %j", opts.qs);
-                let res = await request(opts);
-                // JSON_: stringify snakeCase -> camel_case
-                let matches = await jsonapi.parse(JSON_.stringify(res));  // TODO parse, stringify, parse, stringify… -> inefficient
-                matches.data.forEach(async (match) => {
-                    await ch.sendToQueue("process", new Buffer(JSON.stringify(match)), { persistent: true });
-                });
+                let data = await request(opts),
+                    matches = jsonapi.parse(data);
+                // send match structure
+                await Promise.all(matches
+                    .map(async (match) => await ch.sendToQueue("process",
+                        new Buffer(JSON.stringify(snakeCaseKeys(match))), {
+                            persistent: true,
+                            type: "match",
+                            headers: {
+                                shard: payload.region
+                            }
+                        })
+                ));
+                // send players and teams, they are duplicated in the above structure
+                // and will be inserted seperately
+                await Promise.all(data.included
+                    .filter((o) => o.type == "player" || o.type == "team")
+                    .map(async (o) => await ch.sendToQueue("process",
+                        new Buffer(JSON.stringify(snakeCaseKeys(o))), {
+                            persistent: true,
+                            type: o.type,
+                            headers: {
+                                shard: payload.region
+                            }
+                        })
+                ));
             } catch (err) {
                 if (err.statusCode == 429) {
                     await sleep(1000);
