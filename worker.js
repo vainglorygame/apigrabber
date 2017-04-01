@@ -5,7 +5,6 @@
 var amqp = require("amqplib"),
     request = require("request-promise"),
     sleep = require("sleep-promise"),
-    snakeCaseKeys = require("snakecase-keys"),
     jsonapi = require("./jsonapi");
 
 var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
@@ -44,7 +43,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 // send match structure
                 await Promise.all(matches
                     .map(async (match) => await ch.sendToQueue("process",
-                        new Buffer(JSON.stringify(snakeCaseKeys(match))), {
+                        new Buffer(JSON.stringify(match)), {
                             persistent: true,
                             type: "match",
                             headers: {
@@ -57,7 +56,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 await Promise.all(data.included
                     .filter((o) => o.type == "player" || o.type == "team")
                     .map(async (o) => await ch.sendToQueue("process",
-                        new Buffer(JSON.stringify(snakeCaseKeys(o))), {
+                        new Buffer(JSON.stringify(o)), {
                             persistent: true,
                             type: o.type,
                             headers: {
