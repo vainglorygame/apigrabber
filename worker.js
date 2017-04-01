@@ -51,10 +51,10 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                             }
                         })
                 ));
-                // send players and teams, they are duplicated in the above structure
+                // send players they are duplicated in the above structure
                 // and will be inserted seperately
                 await Promise.all(data.included
-                    .filter((o) => o.type == "player" || o.type == "team")
+                    .filter((o) => o.type == "player")
                     .map(async (o) => await ch.sendToQueue("process",
                         new Buffer(JSON.stringify(o)), {
                             persistent: true,
