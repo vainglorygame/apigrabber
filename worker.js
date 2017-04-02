@@ -64,11 +64,11 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                             }
                         })
                 ));
+                if (matches.length < 50) exhausted = true;
             } catch (err) {
                 if (err.statusCode == 429) {
                     await sleep(1000);
                 } else if (err.statusCode == 404) {
-                    // TODO stop early if len(matches) < pagelen
                     exhausted = true;
                 } else {
                     console.error(err);
