@@ -43,26 +43,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 // send match structure
                 await Promise.all(matches
                     .map(async (match) => await ch.sendToQueue("process",
-                        new Buffer(JSON.stringify(match)), {
-                            persistent: true,
-                            type: "match",
-                            headers: {
-                                shard: payload.region
-                            }
-                        })
-                ));
-                // send players they are duplicated in the above structure
-                // and will be inserted seperately
-                await Promise.all(data.included
-                    .filter((o) => o.type == "player")
-                    .map(async (o) => await ch.sendToQueue("process",
-                        new Buffer(JSON.stringify(o)), {
-                            persistent: true,
-                            type: o.type,
-                            headers: {
-                                shard: payload.region
-                            }
-                        })
+                        new Buffer(JSON.stringify(match)), { persistent: true })
                 ));
                 if (matches.length < 50) exhausted = true;
             } catch (err) {
