@@ -42,8 +42,9 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                     matches = jsonapi.parse(data);
                 // send match structure
                 await Promise.all(matches
-                    .map(async (match) => await ch.sendToQueue("process",
-                        new Buffer(JSON.stringify(match)), { persistent: true })
+                    .map((match) => ch.sendToQueue("process",
+                        new Buffer(JSON.stringify(match)),
+                        { persistent: true, type: "match" })
                 ));
                 if (matches.length < 50) exhausted = true;
             } catch (err) {
