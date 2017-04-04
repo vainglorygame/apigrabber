@@ -12,13 +12,21 @@ var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
 if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
 (async () => {
-    var rabbit = await amqp.connect(RABBITMQ_URI),
-        ch = await rabbit.createChannel();
+    let rabbit, ch;
 
-    await ch.assertQueue("grab", {durable: true});
-    await ch.assertQueue("process", {durable: true});
+    while (true) {
+        try {
+            rabbit = await amqp.connect(RABBITMQ_URI);
+            ch = await rabbit.createChannel();
+            await ch.assertQueue("grab", {durable: true});
+            await ch.assertQueue("process", {durable: true});
+        } catch (err) {
+            console.error(err);
+            await sleep(5000);
+        }
+    }
+
     await ch.prefetch(1);
-
     ch.consume("grab", async (msg) => {
         let exhausted = false,
             payload = JSON.parse(msg.content);
