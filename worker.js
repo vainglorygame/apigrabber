@@ -20,6 +20,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             ch = await rabbit.createChannel();
             await ch.assertQueue("grab", {durable: true});
             await ch.assertQueue("process", {durable: true});
+            break;
         } catch (err) {
             console.error(err);
             await sleep(5000);
