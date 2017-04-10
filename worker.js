@@ -20,6 +20,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             rabbit = await amqp.connect(RABBITMQ_URI);
             ch = await rabbit.createChannel();
             await ch.assertQueue("grab", {durable: true});
+            await ch.assertQueue("grab_sample", {durable: true});
             await ch.assertQueue("process", {durable: true});
             break;
         } catch (err) {
@@ -35,6 +36,13 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             await getAPI(payload, "matches");
         if (msg.properties.type == "samples")
             await getAPI(payload, "samples");
+
+        console.log("done");
+        ch.ack(msg);
+    }, { noAck: false });
+
+    ch.consume("grab_sample", async (msg) => {
+        let payload = JSON.parse(msg.content.toString());
         if (msg.properties.type == "sample")
             await getSample(payload);
 
@@ -74,7 +82,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 if (where == "samples") {
                     // send to self
                     await Promise.all(datas
-                        .map((sample) => ch.sendToQueue("grab",
+                        .map((sample) => ch.sendToQueue("grab_sample",
                             new Buffer(JSON.stringify(sample.attributes.URL)),
                             { persistent: true, type: "sample" })
                     ));
