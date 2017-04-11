@@ -3,7 +3,7 @@
 'use strict';
 
 var amqp = require("amqplib"),
-    request = require("request-promise"),
+    request = require("request-promise-native"),
     sleep = require("sleep-promise"),
     jsonapi = require("./jsonapi"),
     AdmZip = require("adm-zip");
