@@ -102,14 +102,14 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 }
                 console.log(err.statusCode);
                 failed = true;
-                await ch.publish("amq.topic", notify,
-                    new Buffer("grab_failed"));
             }
 
             // next page
             if (!failed)
                 payload.params["page[offset]"] += payload.params["page[limit]"]
         }
+        await ch.publish("amq.topic", notify,
+            new Buffer("grab_done"));
     }
 
     // download a sample ZIP and send to processor
