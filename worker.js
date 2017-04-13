@@ -31,9 +31,10 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
     await ch.prefetch(1);
     ch.consume("grab", async (msg) => {
-        let payload = JSON.parse(msg.content.toString());
+        let payload = JSON.parse(msg.content.toString()),
+            notify = msg.properties.headers.notify;  // where to send progress report
         if (msg.properties.type == "matches")
-            await getAPI(payload, "matches");
+            await getAPI(payload, "matches", notify);
         if (msg.properties.type == "samples")
             await getAPI(payload, "samples");
 
@@ -50,8 +51,8 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
         ch.ack(msg);
     }, { noAck: false });
 
-    // loop over API data pages
-    async function getAPI(payload, where) {
+    // loop over API data pages, notify of progress
+    async function getAPI(payload, where, notify="global") {
         let exhausted = false;
         payload.params["page[limit]"] = payload.params["page[limit]"] || 50;
         payload.params["page[offset]"] = payload.params["page[offset]"] || 0;
@@ -87,7 +88,9 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                             { persistent: true, type: "sample" })
                     ));
                 }
-                if (datas.length < 50) exhausted = true;
+                // tell web about progress
+                await ch.publish("amq.topic", notify,
+                    new Buffer("grab_success"));
             } catch (err) {
                 if (err.statusCode == 429) {
                     await sleep(1000);
@@ -99,6 +102,8 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 }
                 console.log(err.statusCode);
                 failed = true;
+                await ch.publish("amq.topic", notify,
+                    new Buffer("grab_failed"));
             }
 
             // next page
