@@ -9,7 +9,8 @@ var amqp = require("amqplib"),
     AdmZip = require("adm-zip");
 
 var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
-    RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost";
+    RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
+    GRABBERS = parseInt(process.env.GRABBERS) || 4;
 if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
 (async () => {
@@ -29,7 +30,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
         }
     }
 
-    await ch.prefetch(1);
+    await ch.prefetch(GRABBERS);
     ch.consume("grab", async (msg) => {
         let payload = JSON.parse(msg.content.toString()),
             notify = msg.properties.headers.notify;  // where to send progress report
