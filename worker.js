@@ -65,16 +65,20 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                     "Authorization": MADGLORY_TOKEN
                 },
                 json: true,
-                gzip: true
-            }, failed = false;
+                gzip: true,
+                time: true,
+                forever: true,
+                strictSSL: true,
+                resolveWithFullResponse: true
+            }, failed = false, response;
             opts.qs = payload.params;
             try {
                 console.log("API request: %j", opts.qs);
-                let data = await request(opts),
-                    datas = jsonapi.parse(data);
+                response = await request(opts);
+                let data = jsonapi.parse(response.body);
                 if (where == "matches") {
                     // send match structure
-                    await Promise.all(datas
+                    await Promise.all(data
                         .map((match) => ch.sendToQueue("process",
                             new Buffer(JSON.stringify(match)),
                             { persistent: true, type: "match" })
@@ -82,7 +86,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 }
                 if (where == "samples") {
                     // send to self
-                    await Promise.all(datas
+                    await Promise.all(data
                         .map((sample) => ch.sendToQueue("grab_sample",
                             new Buffer(JSON.stringify(sample.attributes.URL)),
                             { persistent: true, type: "sample" })
@@ -92,6 +96,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 await ch.publish("amq.topic", notify,
                     new Buffer("grab_success"));
             } catch (err) {
+                response = err.response;
                 if (err.statusCode == 429) {
                     await sleep(1000);
                 } else if (err.statusCode == 404) {
@@ -100,8 +105,10 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                     console.error(err);
                     exhausted = true;
                 }
-                console.log(err.statusCode);
                 failed = true;
+            } finally {
+                console.log("API response: status %s, connection start %s, connection end %s, ratelimit remaining: %s",
+                    response.statusCode, response.timings.connect, response.timings.end, response.headers["x-ratelimit-remaining"]);
             }
 
             // next page
@@ -130,3 +137,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
         console.log("sample processed", url);
     }
 })();
+
+process.on("unhandledRejection", err => {
+    console.error("Uncaught Promise Error: \n" + err.stack);
+});
