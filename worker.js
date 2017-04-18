@@ -1,17 +1,28 @@
 #!/usr/bin/node
 /* jshint esnext:true */
-'use strict';
+"use strict";
 
-var amqp = require("amqplib"),
+const amqp = require("amqplib"),
+    winston = require("winston"),
     request = require("request-promise-native"),
     sleep = require("sleep-promise"),
     jsonapi = require("./jsonapi"),
     AdmZip = require("adm-zip");
 
-var MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
+const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     GRABBERS = parseInt(process.env.GRABBERS) || 4;
 if (MADGLORY_TOKEN == undefined) throw "Need an API token";
+
+const logger = new (winston.Logger)({
+    transports: [
+        new (winston.transports.Console)({
+            timestamp: () => Date.now(),
+            formatter: (options) => winston.config.colorize(options.level,
+`${new Date(options.timestamp()).toISOString()} ${options.level.toUpperCase()} ${(options.message? options.message:"")} ${(options.meta && Object.keys(options.meta).length? JSON.stringify(options.meta):"")}`)
+        })
+    ]
+});
 
 (async () => {
     let rabbit, ch;
@@ -25,7 +36,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             await ch.assertQueue("process", {durable: true});
             break;
         } catch (err) {
-            console.error(err);
+            logger.error("error connecting", err);
             await sleep(5000);
         }
     }
@@ -39,7 +50,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
         if (msg.properties.type == "samples")
             await getAPI(payload, "samples");
 
-        console.log("done");
+        logger.info("done", payload);
         ch.ack(msg);
     }, { noAck: false });
 
@@ -48,7 +59,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
         if (msg.properties.type == "sample")
             await getSample(payload);
 
-        console.log("done");
+        logger.info("done", payload);
         ch.ack(msg);
     }, { noAck: false });
 
@@ -74,7 +85,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
             }, failed = false, response;
             opts.qs = payload.params;
             try {
-                console.log("API request: %j", opts.qs);
+                logger.info("API request", { uri: opts.uri, qs: opts.qs });
                 response = await request(opts);
                 let data = jsonapi.parse(response.body);
                 if (where == "matches") {
@@ -103,12 +114,13 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 } else if (err.statusCode == 404) {
                     exhausted = true;
                 } else {
-                    console.error(err);
+                    logger.error("API error",
+                        { uri: err.options.uri, qs: err.options.qs, error: err.response.body });
                     exhausted = true;
                 }
                 failed = true;
             } finally {
-                console.log("API response: status %s, connection start %s, connection end %s, ratelimit remaining: %s",
+                logger.info("API response: status %s, connection start %s, connection end %s, ratelimit remaining: %s",
                     response.statusCode, response.timings.connect, response.timings.end, response.headers["x-ratelimit-remaining"]);
             }
 
@@ -122,7 +134,7 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
     // download a sample ZIP and send to processor
     async function getSample(url) {
-        console.log("downloading sample", url);
+        logger.info("downloading sample", url);
         let zipdata = await request({
             uri: url,
             encoding: null
@@ -135,10 +147,10 @@ if (MADGLORY_TOKEN == undefined) throw "Need an API token";
                 new Buffer(JSON.stringify(match)),
                 { persistent: true, type: "match" })
         }));
-        console.log("sample processed", url);
+        logger.info("sample processed", url);
     }
 })();
 
 process.on("unhandledRejection", err => {
-    console.error("Uncaught Promise Error: \n" + err.stack);
+    logger.error("Uncaught Promise Error:", err.stack);
 });
