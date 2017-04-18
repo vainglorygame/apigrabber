@@ -4,7 +4,7 @@
 
 const amqp = require("amqplib"),
     winston = require("winston"),
-    request = require("request-promise-native"),
+    request = require("request-promise"),
     sleep = require("sleep-promise"),
     jsonapi = require("./jsonapi"),
     AdmZip = require("adm-zip");
