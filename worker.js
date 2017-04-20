@@ -4,6 +4,7 @@
 
 const amqp = require("amqplib"),
     winston = require("winston"),
+    loggly = require("winston-loggly-bulk"),
     request = require("request-promise"),
     sleep = require("sleep-promise"),
     jsonapi = require("./jsonapi"),
@@ -11,18 +12,27 @@ const amqp = require("amqplib"),
 
 const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
+    LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
     GRABBERS = parseInt(process.env.GRABBERS) || 4;
 if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
 const logger = new (winston.Logger)({
     transports: [
         new (winston.transports.Console)({
-            timestamp: () => Date.now(),
-            formatter: (options) => winston.config.colorize(options.level,
-`${new Date(options.timestamp()).toISOString()} ${options.level.toUpperCase()} ${(options.message? options.message:"")} ${(options.meta && Object.keys(options.meta).length? JSON.stringify(options.meta):"")}`)
+            timestamp: true,
+            colorize: true
         })
     ]
 });
+
+// loggly integration
+if (LOGGLY_TOKEN)
+    logger.add(winston.transports.Loggly, {
+        inputToken: LOGGLY_TOKEN,
+        subdomain: "kvahuja",
+        tags: ["backend", "apigrabber"],
+        json: true
+    });
 
 (async () => {
     let rabbit, ch;
@@ -120,8 +130,8 @@ const logger = new (winston.Logger)({
                 }
                 failed = true;
             } finally {
-                logger.info("API response: status %s, connection start %s, connection end %s, ratelimit remaining: %s",
-                    response.statusCode, response.timings.connect, response.timings.end, response.headers["x-ratelimit-remaining"]);
+                logger.info("API response",
+                    { status: response.statusCode, connection_start: response.timings.connect, connection_end: response.timings.end, ratelimit_remaining: response.headers["x-ratelimit-remaining"] });
             }
 
             // next page
