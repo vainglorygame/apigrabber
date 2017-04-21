@@ -130,8 +130,9 @@ if (LOGGLY_TOKEN)
                 }
                 failed = true;
             } finally {
-                logger.info("API response",
-                    { status: response.statusCode, connection_start: response.timings.connect, connection_end: response.timings.end, ratelimit_remaining: response.headers["x-ratelimit-remaining"] });
+                if (response)
+                    logger.info("API response",
+                        { status: response.statusCode, connection_start: response.timings.connect, connection_end: response.timings.end, ratelimit_remaining: response.headers["x-ratelimit-remaining"] });
             }
 
             // next page
