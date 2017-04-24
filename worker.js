@@ -3,14 +3,17 @@
 "use strict";
 
 const amqp = require("amqplib"),
+    Promise = require("bluebird"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
     request = require("request-promise"),
     sleep = require("sleep-promise"),
-    jsonapi = require("./jsonapi"),
-    AdmZip = require("adm-zip");
+    jsonapi = require("../orm/jsonapi");
 
 const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
+    QUEUE = process.env.QUEUE || "grab",
+    PROCESS_QUEUE = process.env.QUEUE || "process",
+    SAMPLE_QUEUE = process.env.SAMPLE_QUEUE || "sample",
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
     GRABBERS = parseInt(process.env.GRABBERS) || 4;
@@ -30,7 +33,7 @@ if (LOGGLY_TOKEN)
     logger.add(winston.transports.Loggly, {
         inputToken: LOGGLY_TOKEN,
         subdomain: "kvahuja",
-        tags: ["backend", "apigrabber"],
+        tags: ["backend", "apigrabber", QUEUE],
         json: true
     });
 
@@ -41,9 +44,8 @@ if (LOGGLY_TOKEN)
         try {
             rabbit = await amqp.connect(RABBITMQ_URI);
             ch = await rabbit.createChannel();
-            await ch.assertQueue("grab", {durable: true});
-            await ch.assertQueue("grab_sample", {durable: true});
-            await ch.assertQueue("process", {durable: true});
+            await ch.assertQueue(QUEUE, {durable: true});
+            await ch.assertQueue(PROCESS_QUEUE, {durable: true});
             break;
         } catch (err) {
             logger.error("error connecting", err);
@@ -52,22 +54,14 @@ if (LOGGLY_TOKEN)
     }
 
     await ch.prefetch(GRABBERS);
-    ch.consume("grab", async (msg) => {
+    // main queue
+    ch.consume(QUEUE, async (msg) => {
         let payload = JSON.parse(msg.content.toString()),
             notify = msg.properties.headers.notify;  // where to send progress report
         if (msg.properties.type == "matches")
             await getAPI(payload, "matches", notify);
         if (msg.properties.type == "samples")
             await getAPI(payload, "samples");
-
-        logger.info("done", payload);
-        ch.ack(msg);
-    }, { noAck: false });
-
-    ch.consume("grab_sample", async (msg) => {
-        let payload = JSON.parse(msg.content.toString());
-        if (msg.properties.type == "sample")
-            await getSample(payload);
 
         logger.info("done", payload);
         ch.ack(msg);
@@ -97,26 +91,20 @@ if (LOGGLY_TOKEN)
             try {
                 logger.info("API request", { uri: opts.uri, qs: opts.qs });
                 response = await request(opts);
-                let data = jsonapi.parse(response.body);
-                if (where == "matches") {
+                const data = jsonapi.parse(response.body);
+                if (where == "matches")
                     // send match structure
-                    await Promise.all(data
-                        .map((match) => ch.sendToQueue("process",
-                            new Buffer(JSON.stringify(match)),
-                            { persistent: true, type: "match" })
-                    ));
-                }
-                if (where == "samples") {
-                    // send to self
-                    await Promise.all(data
-                        .map((sample) => ch.sendToQueue("grab_sample",
+                    await Promise.map(data, (match) =>
+                        ch.sendToQueue(PROCESS_QUEUE, new Buffer(JSON.stringify(match)),
+                            { persistent: true, type: "match" }));
+                if (where == "samples")
+                    // forward to sampler
+                    await Promise.map(data,
+                        (sample) => ch.sendToQueue(SAMPLE_QUEUE,
                             new Buffer(JSON.stringify(sample.attributes.URL)),
-                            { persistent: true, type: "sample" })
-                    ));
-                }
+                            { persistent: true, type: "sample" }));
                 // tell web about progress
-                await ch.publish("amq.topic", notify,
-                    new Buffer("grab_success"));
+                await ch.publish("amq.topic", notify, new Buffer("grab_success"));
             } catch (err) {
                 response = err.response;
                 if (err.statusCode == 429) {
@@ -141,24 +129,6 @@ if (LOGGLY_TOKEN)
         }
         await ch.publish("amq.topic", notify,
             new Buffer("grab_done"));
-    }
-
-    // download a sample ZIP and send to processor
-    async function getSample(url) {
-        logger.info("downloading sample", url);
-        let zipdata = await request({
-            uri: url,
-            encoding: null
-        }),
-            zip = new AdmZip(zipdata);
-        await Promise.all(zip.getEntries().map(async (entry) => {
-            if (entry.isDirectory) return;
-            let match = jsonapi.parse(JSON.parse(entry.getData().toString("utf8")));
-            await ch.sendToQueue("process",
-                new Buffer(JSON.stringify(match)),
-                { persistent: true, type: "match" })
-        }));
-        logger.info("sample processed", url);
     }
 })();
 

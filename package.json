@@ -6,6 +6,7 @@
   "dependencies": {
     "adm-zip": "^0.4.7",
     "amqplib": "^0.5.1",
+    "bluebird": "^3.5.0",
     "request": "^2.81.0",
     "request-promise": "^4.2.0",
     "sleep-promise": "^2.0.0",
