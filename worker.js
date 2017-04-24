@@ -12,7 +12,7 @@ const amqp = require("amqplib"),
 
 const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     QUEUE = process.env.QUEUE || "grab",
-    PROCESS_QUEUE = process.env.QUEUE || "process",
+    PROCESS_QUEUE = process.env.PROCESS_QUEUE || "process",
     SAMPLE_QUEUE = process.env.SAMPLE_QUEUE || "sample",
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
     LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
