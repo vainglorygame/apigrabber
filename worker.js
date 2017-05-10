@@ -112,8 +112,12 @@ if (LOGGLY_TOKEN)
                 } else if (err.statusCode == 404) {
                     exhausted = true;
                 } else {
-                    logger.error("API error",
-                        { uri: err.options.uri, qs: err.options.qs, error: err.response.body });
+                    try {
+                        logger.error("API error",
+                            { uri: err.options.uri, qs: err.options.qs, error: err.response.body });
+                    } catch (whatever) {
+                        logger.error("weird API error", err);
+                    }
                     exhausted = true;
                 }
                 failed = true;
