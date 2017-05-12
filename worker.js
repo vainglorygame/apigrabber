@@ -86,9 +86,6 @@ if (LOGGLY_TOKEN)
                         { persistent: true, type: "sample" });
             }
         );
-
-        await ch.publish("amq.topic", notify,
-            new Buffer("grab_done"));
     }
 })();
 
