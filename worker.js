@@ -8,7 +8,7 @@ const amqp = require("amqplib"),
     loggly = require("winston-loggly-bulk"),
     request = require("request-promise"),
     sleep = require("sleep-promise"),
-    jsonapi = require("../orm/jsonapi");
+    api = require("../orm/api");
 
 const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     QUEUE = process.env.QUEUE || "grab",
@@ -67,70 +67,26 @@ if (LOGGLY_TOKEN)
         ch.ack(msg);
     }, { noAck: false });
 
-    // loop over API data pages, notify of progress
+    // loop over API data objects
     async function getAPI(payload, where, notify="global") {
-        let exhausted = false;
-        payload.params["page[limit]"] = payload.params["page[limit]"] || 50;
-        payload.params["page[offset]"] = payload.params["page[offset]"] || 0;
-
-        while (!exhausted) {
-            let opts = {
-                uri: "https://api.dc01.gamelockerapp.com/shards/" + payload.region + "/" + where,
-                headers: {
-                    "X-Title-ID": "semc-vainglory",
-                    "Authorization": MADGLORY_TOKEN
-                },
-                json: true,
-                gzip: true,
-                time: true,
-                forever: true,
-                strictSSL: true,
-                resolveWithFullResponse: true
-            }, failed = false, response;
-            opts.qs = payload.params;
-            try {
-                logger.info("API request", { uri: opts.uri, qs: opts.qs });
-                response = await request(opts);
-                const data = jsonapi.parse(response.body);
-                if (where == "matches")
-                    // send match structure
-                    await Promise.map(data, (match) =>
-                        ch.sendToQueue(PROCESS_QUEUE, new Buffer(JSON.stringify(match)),
-                            { persistent: true, type: "match" }));
+        await Promise.each(await api.requests(where,
+            payload.region, payload.params, logger),
+            async (data, idx, len) => {
+                if (where == "matches") // send match structure
+                    await ch.sendToQueue(PROCESS_QUEUE,
+                        new Buffer(JSON.stringify(data)), {
+                            persistent: true, type: "match",
+                            headers: idx == len - 1? { notify: notify } : {}
+                        });
+                        // forward "notify" for the last match on the last page
                 if (where == "samples")
                     // forward to sampler
-                    await Promise.map(data,
-                        (sample) => ch.sendToQueue(SAMPLE_QUEUE,
-                            new Buffer(JSON.stringify(sample.attributes.URL)),
-                            { persistent: true, type: "sample" }));
-                // tell web about progress
-                await ch.publish("amq.topic", notify, new Buffer("grab_success"));
-            } catch (err) {
-                response = err.response;
-                if (err.statusCode == 429) {
-                    await sleep(1000);
-                } else if (err.statusCode == 404) {
-                    exhausted = true;
-                } else {
-                    try {
-                        logger.error("API error",
-                            { uri: err.options.uri, qs: err.options.qs, error: err.response.body });
-                    } catch (whatever) {
-                        logger.error("weird API error", err);
-                    }
-                    exhausted = true;
-                }
-                failed = true;
-            } finally {
-                if (response)
-                    logger.info("API response",
-                        { status: response.statusCode, connection_start: response.timings.connect, connection_end: response.timings.end, ratelimit_remaining: parseInt(response.headers["x-ratelimit-remaining"]) });
+                    await ch.sendToQueue(SAMPLE_QUEUE,
+                        new Buffer(JSON.stringify(data.attributes.URL)),
+                        { persistent: true, type: "sample" });
             }
+        );
 
-            // next page
-            if (!failed)
-                payload.params["page[offset]"] += payload.params["page[limit]"]
-        }
         await ch.publish("amq.topic", notify,
             new Buffer("grab_done"));
     }
