@@ -69,7 +69,7 @@ if (LOGGLY_TOKEN)
 
     // loop over API data objects
     async function getAPI(payload, where, notify="global") {
-        await Promise.each(await api.requests(where,
+        const data = await Promise.each(await api.requests(where,
             payload.region, payload.params, logger),
             async (data, idx, len) => {
                 if (where == "matches") // send match structure
@@ -84,8 +84,12 @@ if (LOGGLY_TOKEN)
                     await ch.sendToQueue(SAMPLE_QUEUE,
                         new Buffer(JSON.stringify(data.attributes.URL)),
                         { persistent: true, type: "sample" });
+                return data;
             }
         );
+        if (data.length == 0 && notify)
+            await ch.publish("amq.topic", notify,
+                new Buffer("matches_none"));
     }
 })();
 
