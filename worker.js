@@ -72,13 +72,16 @@ if (LOGGLY_TOKEN)
         const data = await Promise.each(await api.requests(where,
             payload.region, payload.params, logger),
             async (data, idx, len) => {
-                if (where == "matches") // send match structure
+                if (where == "matches") { // send match structure
                     await ch.sendToQueue(PROCESS_QUEUE,
                         new Buffer(JSON.stringify(data)), {
                             persistent: true, type: "match",
                             headers: idx == len - 1? { notify: notify } : {}
                         });
                         // forward "notify" for the last match on the last page
+                    if (notify) await ch.publish("amq.topic", notify,
+                        new Buffer("match_pending"));
+                }
                 if (where == "samples")
                     // forward to sampler
                     await ch.sendToQueue(SAMPLE_QUEUE,
