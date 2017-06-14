@@ -76,7 +76,10 @@ if (LOGGLY_TOKEN)
                     await ch.sendToQueue(PROCESS_QUEUE,
                         new Buffer(JSON.stringify(data)), {
                             persistent: true, type: "match",
-                            headers: idx == len - 1? { notify: notify } : {}
+                            headers: {
+                                notify: notify,
+                                donotify: idx == len -1  // TODO remove this header, backwards compat for web
+                            }
                         });
                         // forward "notify" for the last match on the last page
                     if (notify) await ch.publish("amq.topic", notify,
