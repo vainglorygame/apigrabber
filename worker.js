@@ -7,16 +7,13 @@ const amqp = require("amqplib"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
     request = require("request-promise"),
-    sleep = require("sleep-promise"),
     api = require("../orm/api");
 
 const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     QUEUE = process.env.QUEUE || "grab",
     PROCESS_QUEUE = process.env.PROCESS_QUEUE || "process",
-    SAMPLE_QUEUE = process.env.SAMPLE_QUEUE || "sample",
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
-    LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
-    GRABBERS = parseInt(process.env.GRABBERS) || 4;
+    LOGGLY_TOKEN = process.env.LOGGLY_TOKEN;
 if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
 const logger = new (winston.Logger)({
@@ -37,59 +34,47 @@ if (LOGGLY_TOKEN)
         json: true
     });
 
-(async () => {
-    let rabbit, ch;
+amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
+    process.once("SIGINT", rabbit.close.bind(rabbit));
 
-    while (true) {
-        try {
-            rabbit = await amqp.connect(RABBITMQ_URI);
-            ch = await rabbit.createChannel();
-            await ch.assertQueue(QUEUE, {durable: true});
-            await ch.assertQueue(PROCESS_QUEUE, {durable: true});
-            break;
-        } catch (err) {
-            logger.error("error connecting", err);
-            await sleep(5000);
-        }
-    }
+    const ch = await rabbit.createChannel();
+    await ch.assertQueue(QUEUE, { durable: true });
+    await ch.assertQueue(QUEUE + "_failed", { durable: true });
+    await ch.assertQueue(PROCESS_QUEUE, { durable: true });
+    await ch.prefetch(1);  // 1 worker = 1 grab job
 
-    await ch.prefetch(GRABBERS);
     // main queue
     ch.consume(QUEUE, async (msg) => {
-        let payload = JSON.parse(msg.content.toString()),
-            notify = msg.properties.headers.notify;  // where to send progress report
-        if (msg.properties.type == "matches")
-            await getAPI(payload, "matches", notify);
-        if (msg.properties.type == "samples")
-            await getAPI(payload, "samples");
-
-        logger.info("done", payload);
-        ch.ack(msg);
+        try {
+            let payload = JSON.parse(msg.content.toString()),
+                notify = msg.properties.headers.notify; // where to send progress report
+            await getAPI(payload, notify);
+            logger.info("done", payload);
+            await ch.ack(msg);
+        } catch (err) {
+            // log, move to error queue and NACK on *any* error
+            logger.error(err);
+            await ch.sendToQueue(QUEUE + "_failed", msg.content, {
+                persistent: true,
+                headers: msg.properties.headers
+            });
+            await msg.nack(false, false);
+        }
     }, { noAck: false });
 
     // loop over API data objects
-    async function getAPI(payload, where, notify="global") {
-        const data = await Promise.each(await api.requests(where,
+    async function getAPI(payload, notify) {
+        const data = await Promise.each(await api.requests("matches",
             payload.region, payload.params, logger),
             async (data, idx, len) => {
-                if (where == "matches") { // send match structure
-                    await ch.sendToQueue(PROCESS_QUEUE,
-                        new Buffer(JSON.stringify(data)), {
-                            persistent: true, type: "match",
-                            headers: {
-                                notify: notify,
-                                donotify: idx == len -1  // TODO remove this header, backwards compat for web
-                            }
-                        });
-                        // forward "notify" for the last match on the last page
-                    if (notify) await ch.publish("amq.topic", notify,
-                        new Buffer("match_pending"));
-                }
-                if (where == "samples")
-                    // forward to sampler
-                    await ch.sendToQueue(SAMPLE_QUEUE,
-                        new Buffer(JSON.stringify(data.attributes.URL)),
-                        { persistent: true, type: "sample" });
+                await ch.sendToQueue(PROCESS_QUEUE,
+                    new Buffer(JSON.stringify(data)), {
+                        persistent: true, type: "match",
+                        headers: { notify }
+                    });
+                    // forward "notify" for the last match on the last page
+                if (notify) await ch.publish("amq.topic", notify,
+                    new Buffer("match_pending"));
                 return data;
             }
         );
@@ -97,8 +82,9 @@ if (LOGGLY_TOKEN)
             await ch.publish("amq.topic", notify,
                 new Buffer("matches_none"));
     }
-})();
+});
 
-process.on("unhandledRejection", err => {
+process.on("unhandledRejection", (err) => {
     logger.error("Uncaught Promise Error:", err.stack);
+    process.exit(1);  // fail hard and die
 });
