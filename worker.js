@@ -49,8 +49,6 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
             let payload = JSON.parse(msg.content.toString()),
                 notify = msg.properties.headers.notify; // where to send progress report
             await getAPI(payload, notify);
-            logger.info("done", payload);
-            await ch.ack(msg);
         } catch (err) {
             // log, move to error queue and NACK on *any* error
             logger.error(err);
@@ -59,7 +57,10 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 headers: msg.properties.headers
             });
             await msg.nack(false, false);
+            return;
         }
+        logger.info("done", payload);
+        await ch.ack(msg);
     }, { noAck: false });
 
     // loop over API data objects
