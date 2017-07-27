@@ -57,7 +57,7 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
                 persistent: true,
                 headers: msg.properties.headers
             });
-            await msg.nack(false, false);
+            await ch.nack(msg, false, false);
             return;
         }
         await ch.ack(msg);
