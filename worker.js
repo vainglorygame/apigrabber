@@ -43,6 +43,8 @@ amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     await ch.assertQueue(PROCESS_QUEUE, { durable: true });
     await ch.prefetch(1);  // 1 worker = 1 grab job
 
+    logger.info("configuration", { QUEUE, PROCESS_QUEUE });
+
     // main queue
     ch.consume(QUEUE, async (msg) => {
         try {
