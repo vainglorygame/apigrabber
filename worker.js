@@ -21,6 +21,10 @@ const logger = new (winston.Logger)({
         new (winston.transports.Console)({
             timestamp: true,
             colorize: true
+        }),
+        new (winston.transports.File)({
+            label: QUEUE,
+            filename: "apigrabber.log"
         })
     ]
 });
