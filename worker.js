@@ -6,7 +6,6 @@ const amqp = require("amqplib"),
     Promise = require("bluebird"),
     winston = require("winston"),
     loggly = require("winston-loggly-bulk"),
-    datadog = require("winston-datadog"),
     request = require("request-promise"),
     api = require("../orm/api");
 
@@ -14,8 +13,7 @@ const MADGLORY_TOKEN = process.env.MADGLORY_TOKEN,
     QUEUE = process.env.QUEUE || "grab",
     PROCESS_QUEUE = process.env.PROCESS_QUEUE || "process",
     RABBITMQ_URI = process.env.RABBITMQ_URI || "amqp://localhost",
-    LOGGLY_TOKEN = process.env.LOGGLY_TOKEN,
-    DATADOG_TOKEN = process.env.DATADOG_TOKEN;
+    LOGGLY_TOKEN = process.env.LOGGLY_TOKEN;
 if (MADGLORY_TOKEN == undefined) throw "Need an API token";
 
 const logger = new (winston.Logger)({
@@ -35,12 +33,6 @@ if (LOGGLY_TOKEN)
         tags: ["backend", "apigrabber", QUEUE],
         json: true
     });
-
-// datadog integration
-if (DATADOG_TOKEN)
-    logger.add(new datadog({
-        api_key: DATADOG_TOKEN
-    }), null, true);
 
 amqp.connect(RABBITMQ_URI).then(async (rabbit) => {
     process.once("SIGINT", rabbit.close.bind(rabbit));
